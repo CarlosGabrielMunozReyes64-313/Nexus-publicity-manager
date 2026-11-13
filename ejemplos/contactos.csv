@@ -1,0 +1,5 @@
+nombre,correo
+"Contacto de demostración A",demo-a@proveedor.example
+"Contacto de demostración B",demo-b@proveedor.example
+"Contacto repetido",demo-a@proveedor.example
+"Correo no válido",correo-sin-dominio

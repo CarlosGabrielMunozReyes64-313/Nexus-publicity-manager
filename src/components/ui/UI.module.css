@@ -1,0 +1,126 @@
+.button {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #c3d4ca;
+  background: #fff;
+  color: var(--nx-dark);
+  padding: 9px 15px;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.button:hover {
+  background: var(--nx-light);
+  text-decoration: none;
+}
+.primary {
+  background: var(--nx-dark);
+  color: white;
+  border-color: var(--nx-dark);
+}
+.primary:hover {
+  background: #076542;
+}
+.danger {
+  color: #a02929;
+  border-color: #dcbcbc;
+}
+.card {
+  padding: 22px;
+  border: 1px solid #dce6df;
+  border-radius: 8px;
+  background: #fff;
+  min-width: 0;
+}
+.badge {
+  display: inline-flex;
+  padding: 3px 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.6;
+  font-weight: 600;
+  background: #edf1ee;
+  color: #486256;
+  text-transform: capitalize;
+}
+.success {
+  background: #e4f4e9;
+  color: #22653a;
+}
+.warning {
+  background: #fff1d8;
+  color: #815000;
+}
+.error {
+  background: #fce9e7;
+  color: #a12f2f;
+}
+.info {
+  background: #e5f0f7;
+  color: #175b89;
+}
+.dialog {
+  border: 1px solid #c9d9ce;
+  border-radius: 12px;
+  padding: 28px;
+  width: min(640px, 92vw);
+  max-height: 85vh;
+  overflow: auto;
+  color: var(--nx-text);
+}
+.dialog::backdrop {
+  background: #102e2580;
+}
+.dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+.toast {
+  position: fixed;
+  bottom: 25px;
+  right: 25px;
+  max-width: 420px;
+  z-index: 100;
+  background: var(--nx-dark);
+  color: white;
+  padding: 15px 22px;
+  border-radius: 8px;
+}
+.skeleton {
+  height: 90px;
+  background: #e4ece7;
+  border-radius: 8px;
+  animation: pulse 1s alternate infinite;
+  margin: 14px 0;
+}
+@keyframes pulse {
+  to {
+    opacity: 0.4;
+  }
+}
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding-top: 16px;
+}
+.sort {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-transform: inherit;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
