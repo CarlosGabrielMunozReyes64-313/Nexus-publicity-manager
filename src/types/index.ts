@@ -232,7 +232,7 @@ export type ClasificacionRespuesta =
 export interface Respuesta {
   id: string;
   contactoId: string;
-  campanaId: string;
+  campanaId?: string;
   fecha: string;
   hilo: { de: "nexus" | "contacto"; fecha: string; texto: string }[];
   clasificacion: ClasificacionRespuesta;

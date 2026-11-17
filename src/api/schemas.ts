@@ -209,7 +209,7 @@ export const propuestaSchema = z.object({
 export const respuestaSchema = z.object({
   id,
   contactoId: id,
-  campanaId: id,
+  campanaId: id.optional(),
   fecha: str,
   hilo: z.array(
     z.object({ de: z.enum(["nexus", "contacto"]), fecha: str, texto: str }),

@@ -1,3 +1,4 @@
+import { API_URL } from "../../api/client";
 import { useState } from "react";
 import type { Marca, LimitesEnvio } from "../../types";
 import * as S from "../../api/schemas";
@@ -221,7 +222,9 @@ export default function Page() {
                   )}
                   <Button
                     onClick={() =>
-                      cmd.ask(
+                      i.id === "gmail" && i.estado !== "conectada" && import.meta.env.VITE_USE_MOCKS !== "true"
+                        ? window.location.assign(`${API_URL}/integraciones/gmail/autorizar`)
+                        : cmd.ask(
                         i.estado === "conectada"
                           ? "Desconectar integración"
                           : "Conectar integración",
