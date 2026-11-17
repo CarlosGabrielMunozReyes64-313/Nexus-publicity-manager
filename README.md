@@ -93,3 +93,4 @@ Para servir `dist`, configura fallback de rutas a `index.html` y usa HTTPS o loc
 
 Ver `DECISIONES.md` y `VALIDACION.md` para los detalles de implementación y verificación.
 # Nexus-publicity-manager
+# Nexus-publicity-manager
