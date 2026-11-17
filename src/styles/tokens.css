@@ -1,0 +1,15 @@
+:root {
+  --nx-dark: #024029;
+  --nx-teal: #025873;
+  --nx-mid: #04a97a;
+  --nx-bright: #35a644;
+  --nx-light: #e8f5ef;
+  --nx-white: #ffffff;
+  --nx-gray: #f4f7f5;
+  --nx-text: #1a2e24;
+  --nx-muted: #5a7068;
+  --warning: #815000;
+  --error: #ac2828;
+  --info: #175b89;
+  --font: "Montserrat", "Helvetica Neue", Arial, sans-serif;
+}
