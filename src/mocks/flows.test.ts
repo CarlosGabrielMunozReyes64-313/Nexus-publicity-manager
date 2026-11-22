@@ -1,5 +1,6 @@
 import { beforeEach, describe, it, expect } from "vitest";
 import { route, reset, db } from "./handlers";
+import { demoRutas } from "./rutas";
 import * as S from "../api/schemas";
 async function call(path: string, method = "GET", body?: unknown) {
   return route(
@@ -144,6 +145,96 @@ describe("Flujos del contrato mock", () => {
     expect(db.propuestas[2].version).toBe(3);
     expect(db.propuestas[2].versiones).toHaveLength(3);
     expect(db.campanas[1].estado).toBe("en_revision");
+  });
+  it("escenario completo de una ruta de correos (9 pasos, sin envíos)", async () => {
+    demoRutas.esperaMs = 0;
+    try {
+      const json = async (path: string, method = "GET", body?: unknown) => {
+        const r = await call(path, method, body);
+        expect(r.status, path).toBe(200);
+        return r.json();
+      };
+      const inscripciones = db.inscripciones.length;
+      // 1. Pedir una ruta de 3 correos.
+      await json("/propuestas/rutas-correo", "POST", {
+        segmentoId: "seg1",
+        objetivo: "Que completen el diagnóstico RSE Express",
+        numeroCorreos: 3,
+      });
+      // 2. Verla lista.
+      const [sol] = S.solicitudRutaSchema
+        .array()
+        .parse(await json("/propuestas/solicitudes"));
+      expect(sol).toMatchObject({ estado: "lista", tipo: "proponer_campana" });
+      const id = sol.propuestaId!;
+      let p = S.propuestaSchema.parse(await json(`/propuestas/${id}`));
+      expect(p.versiones[0].autor).toBe("agente");
+      const v1 = S.rutaCorreoSchema.parse(p.versiones[0].contenido);
+      expect(v1.pasos).toHaveLength(3);
+      expect(v1.notasAgente?.general).toBeTruthy();
+      // 3. Previsualizarla con un contacto real.
+      const [contacto] = S.contactoElegibleSchema
+        .array()
+        .parse(await json(`/propuestas/${id}/elegibles`));
+      const previa = S.vistaPreviaSchema.parse(
+        await json(`/propuestas/${id}/previsualizar`, "POST", {
+          contactoId: contacto.id,
+        }),
+      );
+      expect(previa.pasos[0].cuerpo).not.toMatch(/\{\{/);
+      // 4. Editar el correo 2.
+      const editado = structuredClone(v1);
+      editado.pasos[1].cuerpo =
+        "Hola, {{nombre}}: versión del administrador para el segundo correo.\n{{firma}}\n{{baja}}";
+      expect(
+        (await json(`/propuestas/${id}`, "PUT", { contenido: editado }))
+          .version,
+      ).toBe(2);
+      // 5. Comparar la versión 1 con la 2: solo cambia el correo 2.
+      p = S.propuestaSchema.parse(await json(`/propuestas/${id}`));
+      const v2 = S.rutaCorreoSchema.parse(p.versiones[1].contenido);
+      expect(p.versiones[1].autor).toBe("admin");
+      expect(v2.pasos.map((x, i) => x.cuerpo === v1.pasos[i].cuerpo)).toEqual([
+        true,
+        false,
+        true,
+      ]);
+      expect(v2.notasAgente?.pasos[1].editadoPorAdmin).toBe(true);
+      // 6. Rechazar con comentario (pidiendo versión nueva).
+      await json(`/propuestas/${id}/rechazar`, "POST", {
+        comentario: "Más corto el primer correo",
+      });
+      // 7. Recibir la versión 3 del agente.
+      const sols = S.solicitudRutaSchema
+        .array()
+        .parse(await json("/propuestas/solicitudes"));
+      expect(sols[0]).toMatchObject({
+        tipo: "revisar_campana",
+        estado: "lista",
+      });
+      p = S.propuestaSchema.parse(await json(`/propuestas/${id}`));
+      expect(p.version).toBe(3);
+      expect(p.versiones[2].autor).toBe("agente");
+      expect(p.versiones[1].decision).toBe("rechazada");
+      // 8. Aprobar (la revisión lo permite).
+      expect(
+        S.revisionRutaSchema.parse(await json(`/propuestas/${id}/revision`))
+          .puedeAprobar,
+      ).toBe(true);
+      await json(`/propuestas/${id}/aprobar`, "POST", {});
+      // 9. La campaña queda aprobada y no se envió nada.
+      const cam = db.campanas.find((c) => c.id === p.objetivoId)!;
+      expect(cam.estado).toBe("aprobada");
+      expect(cam.metricas.enviados).toBe(0);
+      expect(db.inscripciones).toHaveLength(inscripciones);
+      const s = db.secuencias.find((x) => x.id === cam.secuenciaId)!;
+      const v3 = S.rutaCorreoSchema.parse(p.versiones[2].contenido);
+      expect(s.pasos.map((x) => x.cuerpo)).toEqual(
+        v3.pasos.map((x) => x.cuerpo),
+      );
+    } finally {
+      demoRutas.esperaMs = 6000;
+    }
   });
   it("todos los datos de ejemplo cumplen sus esquemas", () => {
     S.empresaSchema.array().parse(db.empresas);

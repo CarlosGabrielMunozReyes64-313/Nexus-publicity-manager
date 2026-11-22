@@ -255,20 +255,17 @@ describe("Auditoría (09)", () => {
   });
 });
 describe("Propuestas (extra)", () => {
-  it("muestra la versión propuesta que se aplicará al aprobar", async () => {
+  it("muestra el contenido de la versión vigente, que es el que se aprobará", async () => {
     const p = db.propuestas.find((x) => x.id === "pr3")!;
-    const cam = db.campanas.find((c) => c.id === p.objetivoId)!;
-    const seq = structuredClone(
-      db.secuencias.find((x) => x.id === cam.secuenciaId)!,
-    );
-    seq.pasos[0].asunto = "Asunto propuesto por el agente";
-    p.versiones.at(-1)!.contenido = seq;
+    const v = p.versiones.at(-1)!;
+    const contenido = structuredClone(v.contenido) as {
+      pasos: { asunto?: string }[];
+    };
+    contenido.pasos[0].asunto = "Asunto propuesto por el agente";
+    v.contenido = contenido;
     montar(<Propuestas />, "/propuestas/pr3");
     expect(
       await screen.findByText("Asunto propuesto por el agente"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Esta versión modifica la secuencia guardada/),
     ).toBeInTheDocument();
   });
 });
@@ -327,9 +324,20 @@ describe("Pedidos de propuestas a los agentes (extra)", () => {
     );
     const dialogo = await screen.findByRole("dialog");
     fireEvent.click(within(dialogo).getByRole("button", { name: "Confirmar" }));
-    expect(await within(dialogo).findByRole("alert")).toHaveTextContent(
-      /modo demostración/,
-    );
+    expect(
+      await screen.findByText(
+        "Pedido enviado. La ruta aparecerá en Propuestas cuando esté lista.",
+      ),
+    ).toBeInTheDocument();
+    const solicitudes = await (
+      await route(new Request("http://localhost/api/propuestas/solicitudes"))
+    ).json();
+    expect(solicitudes[0]).toMatchObject({
+      tipo: "proponer_campana",
+      segmentoId: "seg1",
+      objetivo: "Que completen el diagnóstico RSE Express",
+      numeroCorreos: 3,
+    });
   });
 
   it("lista los pedidos con su estado y el motivo de un fallo", async () => {
@@ -363,13 +371,16 @@ describe("Pedidos de propuestas a los agentes (extra)", () => {
       },
     );
     montar(<Propuestas />, "/propuestas");
+    // Los pedidos de segmentos se ven en «Otras propuestas»; las rutas tienen su panel.
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Otras propuestas" }),
+    );
     expect(
-      await screen.findByText("Campaña para «Industria de Palmira»"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("No se pudo completar")).toBeInTheDocument();
-    expect(
-      screen.getByText("No hay contactos elegibles con base legal aprobada"),
+      await screen.findByText("Pedidos de segmentos al agente"),
     ).toBeInTheDocument();
     expect(screen.getByText("El agente está trabajando")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No hay contactos elegibles con base legal aprobada"),
+    ).toBeNull();
   });
 });

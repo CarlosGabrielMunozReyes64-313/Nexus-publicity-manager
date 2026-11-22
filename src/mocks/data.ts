@@ -1,4 +1,5 @@
 import type * as T from "../types";
+import { rutaDelAgente } from "./rutas";
 const hoy = new Date();
 export const iso = (dias = 0) =>
   new Date(hoy.getTime() - dias * 86400000).toISOString();
@@ -266,7 +267,45 @@ export function crearDatos() {
       estado: "propuesto",
       propuestoPor: "agente",
     },
+    {
+      id: "seg3",
+      nombre: "Proveedores de ingenios · Palmira",
+      reglas: [{ campo: "municipio", operador: "es", valor: "Palmira" }],
+      justificacion:
+        "Empresas de Palmira que venden a ingenios y reciben cuestionarios de proveedores",
+      tamano: 20,
+      version: 1,
+      estado: "aprobado",
+      propuestoPor: "agente",
+    },
   ];
+  // Ruta de ejemplo del Estratega-redactor (versión 1) y su edición (versión 2).
+  const rutaAgente = rutaDelAgente({
+    objetivo: "Que completen el diagnóstico RSE Express",
+    numeroCorreos: 3,
+    segmento: "Proveedores de ingenios · Palmira",
+    elegibles: 8,
+  });
+  const { notasAgente: notasEjemplo, ...secuenciaEjemplo } = rutaAgente;
+  secuencias.push({ ...(secuenciaEjemplo as T.Secuencia), id: "s2" });
+  const rutaAdmin = {
+    ...rutaAgente,
+    pasos: rutaAgente.pasos.map((p, i) =>
+      i === 1
+        ? {
+            ...p,
+            cuerpo:
+              "Hola, {{nombre}}:\n\nLos cuestionarios de proveedores de los ingenios suelen preguntar por residuos, seguridad en el trabajo y relación con la comunidad. Con evidencia sencilla de cada tema, {{empresa}} responde con más tranquilidad.\n\nEl RSE Express es gratuito y le muestra por dónde empezar: {{enlace}}\n\n{{firma}}\n{{baja}}",
+          }
+        : p,
+    ),
+    notasAgente: {
+      ...notasEjemplo!,
+      pasos: notasEjemplo!.pasos.map((n) =>
+        n.orden === 2 ? { ...n, editadoPorAdmin: true } : n,
+      ),
+    },
+  };
   const campanas: T.Campana[] = [
     {
       id: "cam1",
@@ -294,8 +333,8 @@ export function crearDatos() {
     {
       id: "cam2",
       nombre: "RSE Express · Industria local",
-      segmentoId: "seg2",
-      secuenciaId: "s1",
+      segmentoId: "seg3",
+      secuenciaId: "s2",
       estado: "en_revision",
       topeDiario: 15,
       creadaEn: iso(4),
@@ -363,6 +402,26 @@ export function crearDatos() {
     ],
     creadaEn: iso(4),
   }));
+  propuestas[2] = {
+    ...propuestas[2],
+    resumen:
+      "Tres correos en el mismo hilo para invitar al diagnóstico RSE Express.",
+    fuentes: [],
+    versiones: [
+      {
+        version: 1,
+        contenido: { ...rutaAgente, id: "s2" },
+        fecha: iso(3),
+        autor: "agente",
+      },
+      {
+        version: 2,
+        contenido: { ...rutaAdmin, id: "s2" },
+        fecha: iso(2),
+        autor: "admin",
+      },
+    ],
+  };
   const respuestas: T.Respuesta[] = Array.from({ length: 8 }, (_, i) => ({
     id: `r${i + 1}`,
     contactoId: `c${i + 1}`,

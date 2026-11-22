@@ -10,13 +10,62 @@ import {
   trasEditarCampana,
   validarSecuencia,
 } from "../lib/reglas";
+import {
+  avanzar,
+  conRuta,
+  elegiblesDe,
+  huellaRuta,
+  leerRuta,
+  notasEditadas,
+  nuevaSolicitud,
+  OBJETIVO_POR_DEFECTO,
+  publica,
+  renderMock,
+  revisionMock,
+  SIN_ELEGIBLES,
+  solicitudesIniciales,
+  validarPedido,
+  type SolicitudMock,
+} from "./rutas";
 export let db = crearDatos();
 /** Pedidos a los agentes en el modo demostración (se resuelven al instante). */
 let pedidos: z.infer<typeof S.solicitudAgenteSchema>[] = [];
+/** Solicitudes de rutas de correo: el agente simulado tarda unos segundos. */
+let solicitudesRuta: SolicitudMock[] = solicitudesIniciales(db);
 export const reset = () => {
   db = crearDatos();
   pedidos = [];
+  solicitudesRuta = solicitudesIniciales(db);
 };
+/** Pide una ruta al agente simulado con las mismas validaciones que el backend. */
+function pedirRuta(body: unknown) {
+  const datos = validarPedido(body);
+  const seg = db.segmentos.find((s) => s.id === datos.segmentoId);
+  if (!seg) return fail("Registro no encontrado", 404);
+  if (seg.estado !== "aprobado")
+    return fail("El segmento requiere aprobación", 409);
+  if (!elegiblesDe(db, seg.id).length) return fail(SIN_ELEGIBLES, 409);
+  if (
+    solicitudesRuta.some(
+      (s) =>
+        s.tipo === "proponer_campana" &&
+        s.segmentoId === seg.id &&
+        (s.estado === "en_cola" || s.estado === "trabajando"),
+    )
+  )
+    return fail("Ya hay una ruta en preparación para este segmento", 409);
+  const s = nuevaSolicitud({
+    tipo: "proponer_campana",
+    segmentoId: seg.id,
+    segmento: seg.nombre,
+    objetivo: datos.objetivo,
+    numeroCorreos: datos.numeroCorreos,
+    ...(datos.notas ? { notas: datos.notas } : {}),
+  });
+  solicitudesRuta.unshift(s);
+  log("pedir_ruta_correo", "segmentos", seg.id, null, publica(s));
+  return HttpResponse.json({ ok: true, tareaId: s.id });
+}
 const uid = () => crypto.randomUUID();
 function fail(message: string, status = 400) {
   return HttpResponse.json({ message }, { status });
@@ -56,7 +105,12 @@ function suppress(c: T.Contacto, motivo: string) {
     db.supresiones.push({ id: uid(), correo: c.correo, motivo, fecha: iso() });
   stop(c, "baja");
 }
-function reviseCampaign(c: T.Campana) {
+/**
+ * La campaña vuelve a revisión. Igual que revisar_pendientes del backend: una
+ * propuesta pendiente solo recibe versión nueva si cambió la secuencia en uso
+ * (la versión del administrador nunca se pisa con contenido más antiguo).
+ */
+function reviseCampaign(c: T.Campana, secuenciaCambio = false) {
   Object.assign(c, trasEditarCampana(c));
   db.inscripciones
     .filter((i) => i.campanaId === c.id && i.estado !== "finalizada")
@@ -85,9 +139,22 @@ function reviseCampaign(c: T.Campana) {
     };
     db.propuestas.unshift(p);
   } else {
+    const ultima = leerRuta(p.versiones.at(-1)?.contenido);
+    const viva = contenido ? leerRuta(contenido) : null;
+    if (p.estado !== "aprobada") {
+      if (!secuenciaCambio || !viva) return;
+      if (ultima && huellaRuta(ultima) === huellaRuta(viva)) return;
+    }
+    const notas = viva ? notasEditadas(ultima, viva) : undefined;
     p.estado = "pendiente";
+    p.decision = undefined;
     p.version++;
-    p.versiones.push({ version: p.version, contenido, fecha: iso() });
+    p.versiones.push({
+      version: p.version,
+      contenido: notas ? { ...contenido, notasAgente: notas } : contenido,
+      fecha: iso(),
+      autor: "admin",
+    });
   }
 }
 function diaBogota(valor: string) {
@@ -154,6 +221,7 @@ export async function route(request: Request): Promise<Response> {
   const method = request.method;
   const body: unknown =
     method === "GET" ? undefined : await request.json().catch(() => ({}));
+  avanzar(db, solicitudesRuta);
   const before = structuredClone(db);
   const collections = {
     empresas: db.empresas,
@@ -171,6 +239,51 @@ export async function route(request: Request): Promise<Response> {
   };
   if (method === "GET") {
     if (path === "/agentes/solicitudes") return HttpResponse.json(pedidos);
+    if (path === "/propuestas/solicitudes")
+      return HttpResponse.json(
+        solicitudesRuta
+          .filter(
+            (s) => Date.now() - new Date(s.creadaEn).getTime() < 30 * 86400000,
+          )
+          .sort((a, b) => b.creadaEn.localeCompare(a.creadaEn))
+          .map(publica),
+      );
+    if (path === "/propuestas/rutas-correo/segmentos")
+      return HttpResponse.json(
+        db.segmentos
+          .filter((s) => s.estado === "aprobado")
+          .sort((a, b) => a.nombre.localeCompare(b.nombre))
+          .map((s) => ({
+            id: s.id,
+            nombre: s.nombre,
+            version: s.version,
+            elegibles: elegiblesDe(db, s.id).length,
+          })),
+      );
+    if (resource === "propuestas") {
+      const p = db.propuestas.find((x) => x.id === id);
+      if (id && !p) return fail("Registro no encontrado", 404);
+      if (p && action === "revision")
+        return HttpResponse.json(revisionMock(db, p));
+      if (p && action === "elegibles") {
+        if (p.tipo !== "campana")
+          return fail("Solo las rutas de correo tienen contactos elegibles");
+        const cam = db.campanas.find((c) => c.id === p.objetivoId);
+        return HttpResponse.json(
+          elegiblesDe(db, cam?.segmentoId)
+            .slice(0, 50)
+            .map((c) => ({
+              id: c.id,
+              nombre: c.nombre,
+              empresa:
+                db.empresas.find((e) => e.id === c.empresaId)?.razonSocial ??
+                "Sin empresa",
+            })),
+        );
+      }
+      if (p) return HttpResponse.json(conRuta(db, p));
+      return HttpResponse.json(db.propuestas.map((x) => conRuta(db, x)));
+    }
     if (path === "/panel/resumen")
       return HttpResponse.json({
         contactables: db.contactos.filter((c) =>
@@ -329,6 +442,39 @@ export async function route(request: Request): Promise<Response> {
   try {
     if (resource === "dev" && id === "reset") {
       reset();
+      return HttpResponse.json({ ok: true });
+    }
+    if (path === "/propuestas/rutas-correo" && method === "POST") {
+      const r = pedirRuta(body);
+      return r.status === 200 ? HttpResponse.json({ ok: true }) : r;
+    }
+    if (
+      resource === "propuestas" &&
+      id === "solicitudes" &&
+      parts[3] === "reintentar"
+    ) {
+      const s = solicitudesRuta.find((x) => x.id === action);
+      if (!s) return fail("Solicitud no encontrada", 404);
+      if (s.estado !== "fallida")
+        return fail("Solo se puede reintentar una solicitud fallida", 409);
+      if (s.tipo === "proponer_campana") {
+        const r = pedirRuta({
+          segmentoId: s.segmentoId,
+          objetivo: s.objetivo ?? OBJETIVO_POR_DEFECTO,
+          numeroCorreos: s.numeroCorreos ?? 3,
+          notas: s.notas,
+        });
+        return r.status === 200 ? HttpResponse.json({ ok: true }) : r;
+      }
+      solicitudesRuta.unshift(
+        nuevaSolicitud({
+          tipo: "revisar_campana",
+          segmentoId: s.segmentoId,
+          segmento: s.segmento,
+          propuestaId: s.propuestaId,
+        }),
+      );
+      log("reintentar_solicitud_ruta", "tareas", s.id, null, null);
       return HttpResponse.json({ ok: true });
     }
     if (resource === "contactos") {
@@ -585,16 +731,13 @@ export async function route(request: Request): Promise<Response> {
         log("pedir_propuestas_segmentos", "tareas", tareaId, null, null);
         return HttpResponse.json({ ok: true, tareaId });
       }
-      if (action === "proponer-campana") {
-        const s = db.segmentos.find((x) => x.id === id);
-        if (!s) throw Error("Segmento no encontrado");
-        if (s.estado !== "aprobado")
-          return fail("Apruebe el segmento antes de pedir una campaña", 409);
-        return fail(
-          "En el modo demostración el Estratega no redacta campañas nuevas; revise la propuesta de campaña de ejemplo en Propuestas.",
-          409,
-        );
-      }
+      if (action === "proponer-campana")
+        // Ruta anterior: pide una ruta de 3 correos con el objetivo por defecto.
+        return pedirRuta({
+          segmentoId: id,
+          objetivo: OBJETIVO_POR_DEFECTO,
+          numeroCorreos: 3,
+        });
       if (!id)
         db.segmentos.push({
           ...S.segmentoSchema.parse(body),
@@ -611,37 +754,133 @@ export async function route(request: Request): Promise<Response> {
           });
           db.campanas
             .filter((c) => c.segmentoId === id)
-            .forEach(reviseCampaign);
+            .forEach((c) => reviseCampaign(c));
         }
       }
     } else if (resource === "propuestas") {
       const p = db.propuestas.find((x) => x.id === id);
       if (!p) throw Error("Propuesta no encontrada");
-      if (action === "rechazar") {
+      const actual = p.versiones.find((v) => v.version === p.version);
+      if (action === "previsualizar") {
+        if (p.tipo !== "campana")
+          throw Error("Solo las rutas de correo tienen vista previa");
         const b = z
-          .object({ comentario: z.string().trim().min(3) })
+          .object({
+            contactoId: z.string().min(1),
+            version: z.number().optional(),
+          })
           .parse(body);
+        const v = p.versiones.find(
+          (x) => x.version === (b.version ?? p.version),
+        );
+        if (!v) return fail("Versión no encontrada", 404);
+        const ruta = leerRuta(v.contenido);
+        if (!ruta) throw Error("La versión no es una ruta de correos válida");
+        const c = db.contactos.find((x) => x.id === b.contactoId);
+        if (!c) return fail("Registro no encontrado", 404);
+        return HttpResponse.json(
+          renderMock(
+            db,
+            ruta.pasos.map((x, i) => ({ ...x, id: `paso-${i + 1}` })),
+            c,
+          ),
+        );
+      } else if (action === "restaurar") {
+        const { version } = z.object({ version: z.number().int() }).parse(body);
+        if (version === p.version)
+          throw Error("No se puede restaurar la versión actual");
+        const v = p.versiones.find((x) => x.version === version);
+        if (!v) return fail("Versión no encontrada", 404);
+        p.version++;
+        p.estado = "pendiente";
+        p.decision = undefined;
+        p.versiones.push({
+          version: p.version,
+          contenido: structuredClone(v.contenido),
+          fecha: iso(),
+          autor: "admin",
+        });
+        const c = db.campanas.find((c) => c.id === p.objetivoId);
+        if (c && p.tipo === "campana") Object.assign(c, trasEditarCampana(c));
+        log("restaurar", resource, p.id, null, { version });
+        return HttpResponse.json({ ok: true, version: p.version });
+      } else if (action === "rechazar") {
+        const b = z
+          .object({
+            comentario: z
+              .string()
+              .trim()
+              .min(3, "El comentario requiere al menos 3 caracteres"),
+            pedirNuevaVersion: z.boolean().optional(),
+          })
+          .parse(body);
+        if (actual?.decision)
+          throw Error("Esta versión ya fue decidida; cree una versión nueva");
         p.estado = "rechazada";
         p.decision = { fecha: iso(), comentario: b.comentario };
+        if (actual)
+          Object.assign(actual, {
+            decision: "rechazada",
+            comentario: b.comentario,
+            decididaEn: iso(),
+          });
+        if (
+          b.pedirNuevaVersion !== false &&
+          p.agente === "estratega_redactor" &&
+          p.tipo === "campana"
+        ) {
+          const cam = db.campanas.find((c) => c.id === p.objetivoId);
+          const seg = db.segmentos.find((s) => s.id === cam?.segmentoId);
+          solicitudesRuta.unshift(
+            nuevaSolicitud({
+              tipo: "revisar_campana",
+              propuestaId: p.id,
+              segmentoId: seg?.id,
+              segmento: seg?.nombre,
+            }),
+          );
+        }
       } else if (action === "aprobar") {
         if (p.estado === "aprobada") throw Error("Propuesta ya aprobada");
         if (p.tipo === "correo_inferido")
           throw Error(
             "Un correo inferido requiere verificación; no se aprueba para envíos",
           );
-        p.estado = "aprobada";
-        p.decision = { fecha: iso() };
+        if (actual?.decision)
+          throw Error("Esta versión ya fue decidida; cree una versión nueva");
         if (p.tipo === "campana") {
+          // La misma lista de verificación que ve el administrador decide.
+          const rev = revisionMock(db, p);
+          if (!rev.puedeAprobar)
+            throw Error([...rev.bloqueos, ...rev.errores].join(". "));
           const c = db.campanas.find((c) => c.id === p.objetivoId);
           if (!c) throw Error("Campaña asociada no encontrada");
           const s = db.secuencias.find((s) => s.id === c.secuenciaId)!;
           const seg = db.segmentos.find((s) => s.id === c.segmentoId)!;
+          const ruta = leerRuta(actual?.contenido);
+          if (ruta) {
+            // Se aplica tal cual el contenido de la versión aprobada.
+            const { notasAgente, ...secuencia } = ruta;
+            void notasAgente;
+            Object.assign(s, {
+              ...secuencia,
+              id: s.id,
+              pasos: secuencia.pasos.map((x, i) => ({
+                ...x,
+                id: x.id && x.id !== "nuevo" ? x.id : `${s.id}-p${i + 1}`,
+              })),
+            });
+          }
           const errors = validarSecuencia(s, db.marca.prohibidas);
           if (errors.length) throw Error(errors.join(". "));
           c.estado = "aprobada";
           c.versionAprobada = p.version;
           c.huellaAprobada = huella(s, seg);
         }
+        p.estado = "aprobada";
+        p.decision = { fecha: iso() };
+        if (actual)
+          Object.assign(actual, { decision: "aprobada", decididaEn: iso() });
         if (p.tipo === "segmento") {
           const seg = db.segmentos.find((s) => s.id === p.objetivoId);
           if (seg) seg.estado = "aprobado";
@@ -668,14 +907,41 @@ export async function route(request: Request): Promise<Response> {
           }
         }
       } else if (method === "PUT") {
-        const b = z.object({ resumen: z.string().min(5) }).parse(body);
-        p.resumen = b.resumen;
+        const b = z
+          .object({
+            resumen: z.string().optional(),
+            contenido: z.unknown().optional(),
+          })
+          .parse(body);
+        if (b.resumen === undefined && b.contenido === undefined)
+          throw Error("Indique el resumen o el contenido");
+        if (b.resumen !== undefined && b.resumen.trim().length < 5)
+          throw Error("El resumen requiere al menos 5 caracteres");
+        let contenido = structuredClone(actual?.contenido);
+        if (b.contenido !== undefined) {
+          if (p.tipo !== "campana")
+            throw Error("Solo las rutas de correo admiten editar el contenido");
+          const nueva = leerRuta(b.contenido);
+          if (!nueva) throw Error("La ruta no tiene el formato esperado");
+          const errores = validarSecuencia(
+            nueva as T.Secuencia,
+            db.marca.prohibidas,
+          );
+          if (errores.length) throw Error(errores.join(". "));
+          const { notasAgente, ...secuencia } = nueva;
+          void notasAgente;
+          const notas = notasEditadas(leerRuta(actual?.contenido), nueva);
+          contenido = notas ? { ...secuencia, notasAgente: notas } : secuencia;
+        }
+        if (b.resumen !== undefined) p.resumen = b.resumen.trim();
         p.version++;
         p.estado = "pendiente";
+        p.decision = undefined;
         p.versiones.push({
           version: p.version,
-          contenido: b.resumen,
+          contenido,
           fecha: iso(),
+          autor: "admin",
         });
         if (p.tipo === "campana") {
           const c = db.campanas.find((c) => c.id === p.objetivoId);
@@ -688,6 +954,8 @@ export async function route(request: Request): Promise<Response> {
               i.proximoEnvio = undefined;
             });
         }
+        log("PUT", resource, p.id, null, { version: p.version });
+        return HttpResponse.json({ ok: true, version: p.version });
       }
     } else if (resource === "secuencias") {
       const s = db.secuencias.find((x) => x.id === id);
@@ -696,44 +964,15 @@ export async function route(request: Request): Promise<Response> {
         const { contactoId } = z.object({ contactoId: z.string() }).parse(body);
         const c = db.contactos.find((c) => c.id === contactoId);
         if (!c) throw Error("Contacto no encontrado");
-        const e = db.empresas.find((e) => e.id === c.empresaId);
-        const values: Record<string, string> = {
-          nombre: c.nombre,
-          empresa: e?.razonSocial ?? "su empresa",
-          senal: e?.senales[0]?.descripcion ?? "",
-          firma: db.marca.firma,
-          baja: db.marca.baja,
-        };
-        const respaldo: string[] = [];
-        const pasos = s.pasos.map((p) => ({
-          ...p,
-          cuerpo: p.cuerpo.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
-            if (["firma", "baja"].includes(key)) return values[key];
-            const verified = [...c.evidencias, ...(e?.evidencias ?? [])].some(
-              (ev) =>
-                (ev.campo === key ||
-                  (key === "empresa" && ev.campo === "razonSocial")) &&
-                ev.estado === "verificado",
-            );
-            if (verified && values[key]) return values[key];
-            respaldo.push(key);
-            return (
-              p.variables.find((v) => v.nombre === key)?.respaldo ??
-              (key === "nombre"
-                ? "equipo"
-                : key === "empresa"
-                  ? "su empresa"
-                  : "trabaja con empresas grandes de la región")
-            );
-          }),
-        }));
-        return HttpResponse.json({ pasos, respaldo });
+        return HttpResponse.json(renderMock(db, s.pasos, c));
       }
       const next = S.secuenciaSchema.parse(body);
       const errors = validarSecuencia(next, db.marca.prohibidas);
       if (errors.length) throw Error(errors.join(". "));
       Object.assign(s, next);
-      db.campanas.filter((c) => c.secuenciaId === id).forEach(reviseCampaign);
+      db.campanas
+        .filter((c) => c.secuenciaId === id)
+        .forEach((c) => reviseCampaign(c, true));
     } else if (resource === "campanas") {
       const c = db.campanas.find((x) => x.id === id);
       if (!c) throw Error("Campaña no encontrada");
@@ -861,7 +1100,7 @@ export async function route(request: Request): Promise<Response> {
         db.marca = S.marcaSchema.parse(body);
         db.campanas
           .filter((c) => ["activa", "aprobada", "pausada"].includes(c.estado))
-          .forEach(reviseCampaign);
+          .forEach((c) => reviseCampaign(c));
       } else if (id === "limites") {
         const l = S.limitesSchema.parse(body);
         if (

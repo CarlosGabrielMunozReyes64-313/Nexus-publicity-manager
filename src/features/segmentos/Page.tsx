@@ -256,10 +256,10 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                   onClick={() =>
                     cmd.confirm({
                       title: "Pedir campaña al agente",
-                      summary: `El agente Estratega-redactor preparará una campaña (secuencia de correos) para «${item.nombre}». Consume presupuesto de IA. No se envía nada: la campaña llega a Propuestas para que usted la revise y apruebe.`,
+                      summary: `El agente Estratega-redactor preparará una ruta de 3 correos para «${item.nombre}» con el objetivo «Que completen el diagnóstico RSE Express». Para elegir otro objetivo o número de correos, use «Pedir una ruta de correos» en Propuestas. Consume presupuesto de IA. No se envía nada: la ruta llega a Propuestas para que usted la revise y apruebe.`,
                       run: async () => {
                         await cmd.run(`/segmentos/${item.id}/proponer-campana`);
-                        return "Pedido enviado. La campaña aparecerá en Propuestas cuando esté lista.";
+                        return "Pedido enviado. La ruta aparecerá en Propuestas cuando esté lista.";
                       },
                     })
                   }

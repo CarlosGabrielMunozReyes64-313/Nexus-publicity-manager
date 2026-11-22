@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { MODO_DEMO } from "../../lib/modo";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Mail } from "lucide-react";
 import { useResource } from "../../api/hooks";
 import { request } from "../../api/client";
 import { fechaHora } from "../../lib/formato";
@@ -15,53 +15,82 @@ import {
   EvidenceList,
   DiffView,
   QueryState,
+  EmptyState,
 } from "../../components/ui";
-import { Intro, Select, Resource, useCommand } from "../shared";
-import { puedeInscribir, coincide } from "../../lib/reglas";
-const pasoPropuesto = S.secuenciaSchema.shape.pasos.element.extend({
-  id: z.string().optional(),
-});
-/** Una versión de propuesta de campaña guarda la secuencia completa (con o sin ids). */
-const secuenciaPropuesta = S.secuenciaSchema.extend({
-  id: z.string().optional(),
-  pasos: z.array(pasoPropuesto),
-});
-type SecuenciaPropuesta = z.infer<typeof secuenciaPropuesta>;
-const huellaSecuencia = (s: SecuenciaPropuesta) =>
-  JSON.stringify({
-    nombre: s.nombre,
-    objetivo: s.objetivo,
-    llamadaAccion: s.llamadaAccion,
-    metricasExito: s.metricasExito,
-    ventanaEnvio: s.ventanaEnvio,
-    pasos: s.pasos.map((paso) => ({
-      orden: paso.orden,
-      asunto: paso.asunto,
-      cuerpo: paso.cuerpo,
-      esperaDiasHabiles: paso.esperaDiasHabiles,
-      mismoHilo: paso.mismoHilo,
-      variables: paso.variables,
-    })),
-  });
+import { Intro, Select, useCommand } from "../shared";
+import PedirRuta from "./PedirRuta";
+import Solicitudes from "./Solicitudes";
+import RutaDetalle from "./RutaDetalle";
+import { AUTOR, duracion, leerRuta, versionActual } from "./ruta";
+import styles from "./Ruta.module.css";
+
+export type Vista = "rutas" | "otras" | "todas";
+const VISTAS: [Vista, string][] = [
+  ["rutas", "Rutas de correo"],
+  ["otras", "Otras propuestas"],
+  ["todas", "Todas"],
+];
+/** Filtro rápido: las rutas de correo son las propuestas de tipo «campana». */
+export const enVista = (p: PropuestaAgente, vista: Vista) =>
+  vista === "todas" || (vista === "rutas") === (p.tipo === "campana");
+
 export default function Page() {
   const q = useResource("/propuestas", S.propuestaSchema.array());
+  const [vista, setVista] = useState<Vista>("rutas");
   const [estado, setEstado] = useState("");
   const [agente, setAgente] = useState("");
   const [tipo, setTipo] = useState("");
+  const [pidiendo, setPidiendo] = useState(false);
   const id = useLocation().pathname.split("/")[2];
   const item = q.data?.find((p) => p.id === id);
+  const visibles = (q.data ?? []).filter(
+    (p) =>
+      enVista(p, vista) &&
+      (!estado || p.estado === estado) &&
+      (!agente || p.agente === agente) &&
+      (!tipo || p.tipo === tipo),
+  );
   return (
     <>
       <Intro
         title="Propuestas de agentes"
         description="La inteligencia artificial propone. Tu criterio tiene la última palabra."
+        action={
+          !item && (
+            <Button variant="primary" onClick={() => setPidiendo(true)}>
+              <Mail size={16} aria-hidden /> Pedir una ruta de correos
+            </Button>
+          )
+        }
       />
+      {pidiendo && <PedirRuta onClose={() => setPidiendo(false)} />}
       <QueryState loading={q.isPending} error={q.error} retry={q.refetch}>
         {item ? (
-          <Detail key={item.id} p={item} />
+          item.tipo === "campana" ? (
+            <RutaDetalle key={item.id} p={item} />
+          ) : (
+            <Detail key={item.id} p={item} />
+          )
         ) : (
           <>
-            <PedidosAgentes />
+            {vista !== "otras" && <Solicitudes />}
+            {vista !== "rutas" && <PedidosAgentes />}
+            <div
+              className={styles.filtro}
+              role="group"
+              aria-label="Tipo de propuestas"
+            >
+              {VISTAS.map(([v, texto]) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-pressed={vista === v}
+                  onClick={() => setVista(v)}
+                >
+                  {texto}
+                </button>
+              ))}
+            </div>
             <div className="toolbar">
               <Select
                 label="Estado"
@@ -82,15 +111,18 @@ export default function Page() {
                 options={S.propuestaSchema.shape.tipo.options}
               />
             </div>
+            {!visibles.length && (
+              <EmptyState>
+                {vista === "rutas"
+                  ? "No hay rutas de correo con estos filtros. Pida una con «Pedir una ruta de correos»."
+                  : undefined}
+              </EmptyState>
+            )}
             <div className="grid">
-              {q.data
-                ?.filter(
-                  (p) =>
-                    (!estado || p.estado === estado) &&
-                    (!agente || p.agente === agente) &&
-                    (!tipo || p.tipo === tipo),
-                )
-                .map((p) => (
+              {visibles.map((p) =>
+                p.tipo === "campana" ? (
+                  <TarjetaRuta key={p.id} p={p} />
+                ) : (
                   <Card key={p.id}>
                     <div className="row">
                       <Badge>{p.estado}</Badge>
@@ -104,7 +136,8 @@ export default function Page() {
                     </p>
                     <Link to={`/propuestas/${p.id}`}>Revisar propuesta →</Link>
                   </Card>
-                ))}
+                ),
+              )}
             </div>
           </>
         )}
@@ -112,15 +145,55 @@ export default function Page() {
     </>
   );
 }
+
+/** Tarjeta de una ruta: campaña, segmento, correos, duración, elegibles y estado. */
+function TarjetaRuta({ p }: { p: PropuestaAgente }) {
+  const segmentos = useResource(
+    "/propuestas/rutas-correo/segmentos",
+    S.segmentoRutaSchema.array(),
+  );
+  const v = versionActual(p);
+  const ruta = leerRuta(v?.contenido);
+  const seg = segmentos.data?.find((s) => s.id === p.ruta?.segmentoId);
+  return (
+    <Card>
+      <div className="row">
+        <Badge>{p.estado}</Badge>
+        {p.estado === "pendiente" && (
+          <Badge tono="warning">Espera tu revisión</Badge>
+        )}
+        <small>
+          v{p.version} · {AUTOR[v?.autor ?? ""] ?? p.agente}
+        </small>
+      </div>
+      <h2 style={{ marginTop: 16 }}>
+        {p.ruta?.campanaNombre ?? ruta?.nombre ?? p.resumen}
+      </h2>
+      <div className={styles.datos}>
+        <span>Segmento: {p.ruta?.segmentoNombre ?? "sin dato"}</span>
+        {ruta && (
+          <>
+            <span>{ruta.pasos.length} correos</span>
+            <span>{duracion(ruta.pasos)} días hábiles</span>
+          </>
+        )}
+        <span>
+          {seg
+            ? `${seg.elegibles} ${seg.elegibles === 1 ? "elegible" : "elegibles"}`
+            : segmentos.isPending
+              ? "Contando elegibles…"
+              : "Segmento sin aprobar"}
+        </span>
+      </div>
+      <p className="muted">{p.resumen}</p>
+      <Link to={`/propuestas/${p.id}`}>Revisar ruta →</Link>
+    </Card>
+  );
+}
+
 type Pedido = z.infer<typeof S.solicitudAgenteSchema>;
 const pedidoActivo = (p: Pedido) =>
   p.estado === "pendiente" || p.estado === "en_proceso";
-const TITULO_PEDIDO: Record<Pedido["tipo"], (p: Pedido) => string> = {
-  proponer_segmentos: () => "Propuestas de segmentos",
-  proponer_campana: (p) =>
-    `Campaña para «${p.segmento ?? "segmento eliminado"}»`,
-  revisar_campana: () => "Nueva versión de una campaña rechazada",
-};
 function estadoPedido(
   p: Pedido,
 ): [string, "success" | "warning" | "error" | "info"] {
@@ -131,7 +204,7 @@ function estadoPedido(
   if (p.estado === "fallida") return ["No se pudo completar", "error"];
   return ["Cancelado", "info"];
 }
-/** Pedidos recientes a los agentes: se actualiza solo mientras alguno avanza. */
+/** Pedidos de segmentos al agente (las rutas tienen su propio panel). */
 function PedidosAgentes() {
   const cache = useQueryClient();
   const q = useQuery({
@@ -139,22 +212,27 @@ function PedidosAgentes() {
     queryFn: () =>
       request("/agentes/solicitudes", S.solicitudAgenteSchema.array()),
     refetchInterval: (query) =>
-      query.state.data?.some(pedidoActivo) ? 4000 : false,
+      query.state.data?.some(
+        (p) => p.tipo === "proponer_segmentos" && pedidoActivo(p),
+      )
+        ? 4000
+        : false,
   });
-  const listas = q.data?.filter((p) => p.estado === "completada").length ?? 0;
+  const pedidos = (q.data ?? []).filter((p) => p.tipo === "proponer_segmentos");
+  const listas = pedidos.filter((p) => p.estado === "completada").length;
   useEffect(() => {
     // Un pedido terminado deja propuestas nuevas: se recarga la lista.
     if (listas) void cache.invalidateQueries({ queryKey: ["/propuestas"] });
   }, [listas, cache]);
-  if (!q.data?.length) return null;
+  if (!pedidos.length) return null;
   return (
     <div style={{ marginBottom: 20 }}>
-      <Card title="Pedidos a los agentes">
+      <Card title="Pedidos de segmentos al agente">
         <ul className="list">
-          {q.data.map((p) => (
+          {pedidos.map((p) => (
             <li key={p.id}>
               <div className="row">
-                <strong>{TITULO_PEDIDO[p.tipo](p)}</strong>
+                <strong>Propuestas de segmentos</strong>
                 <Badge tono={estadoPedido(p)[1]}>{estadoPedido(p)[0]}</Badge>
                 <small className="muted">{fechaHora(p.creadaEn)}</small>
               </div>
@@ -173,23 +251,12 @@ function PedidosAgentes() {
     </div>
   );
 }
+
+/** Propuestas que no son rutas de correo (se muestran como antes). */
 function Detail({ p }: { p: PropuestaAgente }) {
   const cmd = useCommand();
   const [text, setText] = useState(p.resumen);
   const [editing, setEditing] = useState(false);
-  const cs = useResource("/contactos", S.contactoSchema.array());
-  const es = useResource("/empresas", S.empresaSchema.array());
-  const sup = useResource("/supresiones", S.supresionSchema.array());
-  const segs = useResource("/segmentos", S.segmentoSchema.array());
-  const cams = useResource("/campanas", S.campanaSchema.array());
-  const campaign = cams.data?.find((c) => c.id === p.objetivoId);
-  const seg = segs.data?.find((s) => s.id === campaign?.segmentoId);
-  const destinatarios = (cs.data ?? []).filter(
-    (c) =>
-      puedeInscribir(c, sup.data ?? []) &&
-      es.data?.find((e) => e.id === c.empresaId)?.estadoCuenta !== "cliente" &&
-      coincide(c, es.data ?? [], seg?.reglas ?? []),
-  ).length;
   return (
     <>
       <Link to="/propuestas">← Propuestas</Link>
@@ -226,112 +293,18 @@ function Detail({ p }: { p: PropuestaAgente }) {
               puede convertirlo en un correo válido.
             </p>
           )}
-          {p.tipo === "campana" && campaign && (
-            <Resource
-              path={`/secuencias/${campaign.secuenciaId}`}
-              schema={S.secuenciaSchema}
-            >
-              {(actual) => {
-                // Se muestra lo que se aprobará: el contenido de la versión vigente
-                // de la propuesta, que puede diferir de la secuencia guardada.
-                const version = secuenciaPropuesta.safeParse(
-                  p.versiones.find((v) => v.version === p.version)?.contenido,
-                );
-                const s = version.success ? version.data : actual;
-                const cambia =
-                  version.success &&
-                  huellaSecuencia(version.data) !== huellaSecuencia(actual);
-                return (
-                  <>
-                    {cambia && (
-                      <p className="notice warning">
-                        Esta versión modifica la secuencia guardada. Abajo se
-                        muestra el contenido propuesto: al aprobar se aplicará
-                        tal cual.
-                      </p>
-                    )}
-                    <h3>{campaign.nombre}</h3>
-                    <p>Objetivo: {s.objetivo}</p>
-                    <p>
-                      Segmento: {seg?.nombre} · {destinatarios} destinatarios
-                      elegibles
-                    </p>
-                    <p>{seg?.justificacion}</p>
-                    <p>Llamada a la acción: {s.llamadaAccion}</p>
-                    {s.pasos.map((p) => (
-                      <details key={p.id ?? p.orden} open>
-                        <summary>
-                          Paso {p.orden} · espera {p.esperaDiasHabiles} días
-                          hábiles
-                        </summary>
-                        <h3>{p.asunto ?? "Continúa en el mismo hilo"}</h3>
-                        <pre>{p.cuerpo}</pre>
-                        <small>
-                          Variables:{" "}
-                          {p.variables
-                            .map(
-                              (v) =>
-                                `${v.nombre} → ${v.campoFuente}; respaldo: ${v.respaldo}`,
-                            )
-                            .join(" · ") ||
-                            "Nombre y empresa: solo evidencia verificada; si falta, texto genérico."}
-                        </small>
-                      </details>
-                    ))}
-                    <p>Métricas: {s.metricasExito.join(" · ")}</p>
-                    <p>
-                      Ventana: {s.ventanaEnvio.desde}–{s.ventanaEnvio.hasta} ·
-                      días {s.ventanaEnvio.dias.join(", ")} · America/Bogota
-                    </p>
-                    <p className="notice">
-                      Respuesta: pausa. Baja o rebote duro: supresión. Reunión o
-                      cliente: salida.
-                    </p>
-                    <Link to={`/secuencias/${actual.id}/editar`}>
-                      Editar secuencia
-                    </Link>
-                  </>
-                );
-              }}
-            </Resource>
-          )}
           <hr />
           <div className="row">
             <Button
               variant="primary"
-              disabled={
-                p.estado === "aprobada" ||
-                p.tipo === "correo_inferido" ||
-                cs.isPending ||
-                es.isPending ||
-                sup.isPending ||
-                segs.isPending ||
-                cams.isPending
-              }
+              disabled={p.estado === "aprobada" || p.tipo === "correo_inferido"}
               onClick={() =>
                 cmd.ask(
                   "Aprobar propuesta",
-                  p.tipo === "campana" ? (
-                    <>
-                      <p>
-                        {destinatarios} destinatarios elegibles · Tope diario:{" "}
-                        {campaign?.topeDiario}.
-                      </p>
-                      <p>
-                        Primer envío estimado: próxima ventana hábil tras
-                        activar la campaña; no se programa al aprobar.{" "}
-                        {MODO_DEMO
-                          ? "No se enviarán correos reales en esta demostración."
-                          : "Aprobar no envía nada: los correos reales salen por Gmail solo después de activar la campaña."}
-                      </p>
-                      <p>{campaign?.nombre}</p>
-                    </>
-                  ) : (
-                    <p>
-                      Se aprobará la versión {p.version}: {p.resumen}. Los
-                      correos inferidos no se validan automáticamente.
-                    </p>
-                  ),
+                  <p>
+                    Se aprobará la versión {p.version}: {p.resumen}. Los correos
+                    inferidos no se validan automáticamente.
+                  </p>,
                   `/propuestas/${p.id}/aprobar`,
                 )
               }

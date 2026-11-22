@@ -36,13 +36,17 @@ describe("Pantallas críticas", () => {
   it("aprobar propuesta pide confirmación antes de mutar", async () => {
     wrapper(<Propuestas />, "/propuestas/pr3");
     const approve = await screen.findByRole("button", {
-      name: "Aprobar propuesta",
+      name: "Aprobar ruta",
     });
     await waitFor(() => expect(approve).not.toBeDisabled());
     fireEvent.click(approve);
     expect(db.propuestas[2].estado).toBe("pendiente");
-    expect(screen.getByRole("dialog")).toHaveTextContent("destinatarios");
-    fireEvent.click(screen.getByRole("button", { name: "Confirmar" }));
+    const dialogo = screen.getByRole("dialog");
+    expect(dialogo).toHaveTextContent("elegibles");
+    expect(dialogo).toHaveTextContent("Aprobar no envía ningún correo");
+    fireEvent.click(
+      within(dialogo).getByRole("button", { name: "Aprobar ruta" }),
+    );
     await waitFor(() => expect(db.campanas[1].estado).toBe("aprobada"));
   });
   it("aceptar resultado pide confirmar y actualiza su estado", async () => {

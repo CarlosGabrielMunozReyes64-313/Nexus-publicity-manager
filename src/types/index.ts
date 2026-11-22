@@ -262,11 +262,28 @@ export interface PropuestaAgente {
   estado: "pendiente" | "aprobada" | "editada" | "rechazada";
   resumen: string;
   version: number;
-  versiones: { version: number; contenido: unknown; fecha: string }[];
+  versiones: VersionPropuesta[];
   fuentes: Evidencia[];
   cambioSustancial?: boolean;
   creadaEn: string;
   decision?: { fecha: string; comentario?: string };
+  /** Solo rutas de correo: campaña y segmento, para la lista. */
+  ruta?: {
+    campanaNombre: string;
+    campanaEstado: string;
+    segmentoId: string;
+    segmentoNombre: string;
+  };
+}
+
+export interface VersionPropuesta {
+  version: number;
+  contenido: unknown;
+  fecha: string;
+  autor?: "agente" | "admin";
+  decision?: "aprobada" | "rechazada";
+  comentario?: string;
+  decididaEn?: string;
 }
 
 export interface ResultadoDescubrimiento {

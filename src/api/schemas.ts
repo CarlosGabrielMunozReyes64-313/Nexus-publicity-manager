@@ -200,12 +200,26 @@ export const propuestaSchema = z.object({
         z.null(),
       ]),
       fecha: str,
+      /** Quién escribió la versión: el agente o el administrador. */
+      autor: z.enum(["agente", "admin"]).optional(),
+      decision: z.enum(["aprobada", "rechazada"]).optional(),
+      comentario: str.optional(),
+      decididaEn: str.optional(),
     }),
   ),
   fuentes: z.array(evidenciaSchema),
   cambioSustancial: z.boolean().optional(),
   creadaEn: str,
   decision: z.object({ fecha: str, comentario: str.optional() }).optional(),
+  /** Solo rutas de correo (tipo campana): campaña y segmento para la lista. */
+  ruta: z
+    .object({
+      campanaNombre: str,
+      campanaEstado: str,
+      segmentoId: str,
+      segmentoNombre: str,
+    })
+    .optional(),
 });
 export const respuestaSchema = z.object({
   id,
@@ -438,4 +452,77 @@ export const paginaAuditoriaSchema = z.object({
   total: num.int().nonnegative(),
   pagina: num.int().positive(),
   tamano: num.int().positive(),
+});
+
+// ---------------------------------------------------------------- Rutas de correo
+/** Nota del agente por correo; `editadoPorAdmin` marca los que cambió el administrador. */
+export const notaPasoSchema = z.object({
+  orden: num,
+  proposito: str.optional(),
+  porQue: str.optional(),
+  editadoPorAdmin: z.boolean().optional(),
+});
+export const notasAgenteSchema = z.object({
+  general: str,
+  pasos: z.array(notaPasoSchema),
+});
+/** Contenido de una versión de ruta: la secuencia completa y, si existen, las notas. */
+export const rutaCorreoSchema = secuenciaSchema.extend({
+  id: str.optional(),
+  pasos: z.array(
+    secuenciaSchema.shape.pasos.element.extend({ id: str.optional() }),
+  ),
+  notasAgente: notasAgenteSchema.optional(),
+});
+/** GET /propuestas/solicitudes: pedidos de rutas de los últimos 30 días. */
+export const solicitudRutaSchema = z.object({
+  id,
+  tipo: z.enum(["proponer_campana", "revisar_campana"]),
+  estado: z.enum(["en_cola", "trabajando", "lista", "fallida"]),
+  segmentoId: str.optional(),
+  segmento: str.optional(),
+  propuestaId: str.optional(),
+  objetivo: str.optional(),
+  numeroCorreos: num.optional(),
+  creadaEn: str,
+  terminadaEn: str.optional(),
+  error: str.optional(),
+});
+/** GET /propuestas/rutas-correo/segmentos: segmentos aprobados con sus elegibles. */
+export const segmentoRutaSchema = z.object({
+  id,
+  nombre: str,
+  version: num,
+  elegibles: num.int().nonnegative(),
+});
+/** GET /propuestas/:id/revision: la lista de verificación que también usa aprobar. */
+export const revisionRutaSchema = z.object({
+  puedeAprobar: z.boolean(),
+  bloqueos: z.array(str),
+  errores: z.array(str),
+  advertencias: z.array(str),
+  elegibles: num,
+  segmento: z.object({ id, nombre: str, estado: str, version: num }).optional(),
+  ventanaValida: z.boolean().optional(),
+  gmailConectado: z.boolean().optional(),
+  duracionDiasHabiles: num.optional(),
+  topeDiario: num.optional(),
+});
+/** GET /propuestas/:id/elegibles: contactos para la vista previa (máximo 50). */
+export const contactoElegibleSchema = z.object({
+  id,
+  nombre: str,
+  empresa: str,
+});
+/** POST /propuestas/:id/previsualizar (y /secuencias/:id/previsualizar). */
+export const vistaPreviaSchema = z.object({
+  pasos: z.array(
+    secuenciaSchema.shape.pasos.element.extend({ id: str.optional() }),
+  ),
+  respaldo: z.array(str),
+});
+/** Respuesta de PUT /propuestas/:id y POST /propuestas/:id/restaurar. */
+export const versionCreadaSchema = z.object({
+  ok: z.literal(true),
+  version: num.optional(),
 });
