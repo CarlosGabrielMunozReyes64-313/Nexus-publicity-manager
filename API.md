@@ -67,3 +67,9 @@ La regla especial de segmento `campo: contactoIds`, `operador: es`, `valor: c1,c
 ## Responsabilidades del backend futuro
 
 El cambio de variable conecta la interfaz, pero no crea un servidor. El backend debe aplicar autenticación, autorización, validación, supresión, versionado y huellas de aprobación; verificar correos y evidencias; registrar transiciones y eventos; implementar el motor de envíos con horarios/cupos; detenerse por bajas, rebotes, respuestas, reuniones y cuentas cliente. Nunca debe confiar en que una validación visual del frontend sea una garantía de seguridad.
+
+## Pedidos de propuestas a los agentes
+
+- `POST /segmentos/proponer` encola al Segmentador. 409 si falta configurar el proveedor de IA, si no hay empresas o si ya hay un pedido en curso. Respuesta: `{ok: true, tareaId}`.
+- `POST /segmentos/:id/proponer-campana` encola al Estratega-redactor para un segmento **aprobado** con contactos elegibles. 409 con el motivo si no se cumple o si ya hay una campaña en preparación para ese segmento.
+- `GET /agentes/solicitudes`: los 10 pedidos más recientes (`proponer_segmentos`, `proponer_campana`, `revisar_campana`) con `estado` (`pendiente`, `en_proceso`, `completada`, `fallida`, `cancelada`), `intentos`, `maxIntentos`, `creadaEn`, `terminadaEn`, `proximoIntento`, `segmentoId`, `segmento` y, si falló o espera reintento, `error` con un motivo seguro.

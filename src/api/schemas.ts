@@ -398,6 +398,27 @@ export const resumenSchema = z.object({
 });
 export const embudoSchema = z.array(z.object({ etapa: str, conteo: num }));
 export const okSchema = z.object({ ok: z.literal(true) }).passthrough();
+/** GET /agentes/solicitudes: pedidos recientes a los agentes que proponen. */
+export const solicitudAgenteSchema = z.object({
+  id,
+  tipo: z.enum(["proponer_segmentos", "proponer_campana", "revisar_campana"]),
+  estado: z.enum([
+    "pendiente",
+    "en_proceso",
+    "completada",
+    "fallida",
+    "cancelada",
+  ]),
+  intentos: num,
+  maxIntentos: num,
+  error: str.optional(),
+  creadaEn: str,
+  terminadaEn: str.optional(),
+  proximoIntento: str.optional(),
+  segmentoId: str.optional(),
+  segmento: str.optional(),
+  propuestaId: str.optional(),
+});
 /** Resultado de POST /contactos/importar. */
 export const importacionSchema = z.object({
   ok: z.literal(true),

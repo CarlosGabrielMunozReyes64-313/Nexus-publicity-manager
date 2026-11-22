@@ -321,6 +321,22 @@ progress {
 .skip:focus {
   top: 0;
 }
+/* Lista simple de elementos con separador (p. ej., pedidos a los agentes). */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.list > li {
+  padding: 12px 0;
+  border-top: 1px solid var(--nx-light);
+}
+.list > li:first-child {
+  border-top: 0;
+}
+.list p {
+  margin: 6px 0 0;
+}
 @media (max-width: 1000px) {
   .grid,
   .three {

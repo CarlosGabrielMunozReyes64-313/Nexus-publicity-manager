@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { MODO_DEMO } from "../../lib/modo";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useResource } from "../../api/hooks";
+import { request } from "../../api/client";
+import { fechaHora } from "../../lib/formato";
 import * as S from "../../api/schemas";
 import type { PropuestaAgente } from "../../types";
 import {
@@ -58,6 +61,7 @@ export default function Page() {
           <Detail key={item.id} p={item} />
         ) : (
           <>
+            <PedidosAgentes />
             <div className="toolbar">
               <Select
                 label="Estado"
@@ -106,6 +110,67 @@ export default function Page() {
         )}
       </QueryState>
     </>
+  );
+}
+type Pedido = z.infer<typeof S.solicitudAgenteSchema>;
+const pedidoActivo = (p: Pedido) =>
+  p.estado === "pendiente" || p.estado === "en_proceso";
+const TITULO_PEDIDO: Record<Pedido["tipo"], (p: Pedido) => string> = {
+  proponer_segmentos: () => "Propuestas de segmentos",
+  proponer_campana: (p) =>
+    `Campaña para «${p.segmento ?? "segmento eliminado"}»`,
+  revisar_campana: () => "Nueva versión de una campaña rechazada",
+};
+function estadoPedido(
+  p: Pedido,
+): [string, "success" | "warning" | "error" | "info"] {
+  if (p.estado === "pendiente")
+    return [p.intentos > 0 ? "Reintento programado" : "En cola", "warning"];
+  if (p.estado === "en_proceso") return ["El agente está trabajando", "info"];
+  if (p.estado === "completada") return ["Lista", "success"];
+  if (p.estado === "fallida") return ["No se pudo completar", "error"];
+  return ["Cancelado", "info"];
+}
+/** Pedidos recientes a los agentes: se actualiza solo mientras alguno avanza. */
+function PedidosAgentes() {
+  const cache = useQueryClient();
+  const q = useQuery({
+    queryKey: ["/agentes/solicitudes"],
+    queryFn: () =>
+      request("/agentes/solicitudes", S.solicitudAgenteSchema.array()),
+    refetchInterval: (query) =>
+      query.state.data?.some(pedidoActivo) ? 4000 : false,
+  });
+  const listas = q.data?.filter((p) => p.estado === "completada").length ?? 0;
+  useEffect(() => {
+    // Un pedido terminado deja propuestas nuevas: se recarga la lista.
+    if (listas) void cache.invalidateQueries({ queryKey: ["/propuestas"] });
+  }, [listas, cache]);
+  if (!q.data?.length) return null;
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <Card title="Pedidos a los agentes">
+        <ul className="list">
+          {q.data.map((p) => (
+            <li key={p.id}>
+              <div className="row">
+                <strong>{TITULO_PEDIDO[p.tipo](p)}</strong>
+                <Badge tono={estadoPedido(p)[1]}>{estadoPedido(p)[0]}</Badge>
+                <small className="muted">{fechaHora(p.creadaEn)}</small>
+              </div>
+              {p.error && (
+                <p className={p.estado === "fallida" ? "danger" : "muted"}>
+                  {p.error}
+                  {p.estado === "pendiente" && p.proximoIntento
+                    ? ` Nuevo intento: ${fechaHora(p.proximoIntento)}.`
+                    : ""}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </div>
   );
 }
 function Detail({ p }: { p: PropuestaAgente }) {

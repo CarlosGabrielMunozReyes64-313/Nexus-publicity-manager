@@ -43,8 +43,21 @@ export function Card({
     </section>
   );
 }
-export function Badge({ children }: { children: ReactNode }) {
+export function Badge({
+  children,
+  tono,
+}: {
+  children: ReactNode;
+  /** Color explícito para textos libres (sin mayúscula en cada palabra). */
+  tono?: "success" | "warning" | "error" | "info";
+}) {
   const v = String(children);
+  if (tono)
+    return (
+      <span className={`${styles.badge} ${styles[tono]} ${styles.libre}`}>
+        {children}
+      </span>
+    );
   const style = [
     "verificado",
     "aprobada",

@@ -17,9 +17,12 @@ export default function Page() {
         title="Segmentos"
         description="Agrupa contactos por criterios explícitos y revisables."
         action={
-          <Button variant="primary" onClick={() => setNewItem(true)}>
-            Nuevo segmento
-          </Button>
+          <div className="row">
+            <PedirSegmentos />
+            <Button variant="primary" onClick={() => setNewItem(true)}>
+              Nuevo segmento
+            </Button>
+          </div>
         }
       />
       <QueryState loading={q.isPending} error={q.error} retry={q.refetch}>
@@ -45,6 +48,27 @@ export default function Page() {
         )}
       </QueryState>
     </>
+  );
+}
+/** Pide al Segmentador nuevas propuestas de segmentos (tarea en segundo plano). */
+function PedirSegmentos() {
+  const cmd = useCommand();
+  return (
+    <Button
+      onClick={() =>
+        cmd.confirm({
+          title: "Pedir propuestas de segmentos",
+          summary:
+            "El agente Segmentador revisará sus empresas y el cliente ideal y propondrá segmentos. Consume presupuesto de IA. Las propuestas llegan a Propuestas en unos minutos para que usted las apruebe.",
+          run: async () => {
+            await cmd.run("/segmentos/proponer");
+            return "Pedido enviado. Siga su avance en Propuestas.";
+          },
+        })
+      }
+    >
+      Pedir propuestas al agente
+    </Button>
   );
 }
 function Editor({ item, close }: { item?: Segmento; close: () => void }) {
@@ -226,6 +250,23 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
               >
                 Archivar
               </Button>
+              {item.estado === "aprobado" && (
+                <Button
+                  variant="primary"
+                  onClick={() =>
+                    cmd.confirm({
+                      title: "Pedir campaña al agente",
+                      summary: `El agente Estratega-redactor preparará una campaña (secuencia de correos) para «${item.nombre}». Consume presupuesto de IA. No se envía nada: la campaña llega a Propuestas para que usted la revise y apruebe.`,
+                      run: async () => {
+                        await cmd.run(`/segmentos/${item.id}/proponer-campana`);
+                        return "Pedido enviado. La campaña aparecerá en Propuestas cuando esté lista.";
+                      },
+                    })
+                  }
+                >
+                  Pedir campaña al agente
+                </Button>
+              )}
             </div>
           )}
         </form>

@@ -45,6 +45,9 @@
   color: #486256;
   text-transform: capitalize;
 }
+.libre {
+  text-transform: none;
+}
 .success {
   background: #e4f4e9;
   color: #22653a;

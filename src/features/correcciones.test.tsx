@@ -294,3 +294,82 @@ describe("Segmentos (extra)", () => {
     );
   });
 });
+describe("Pedidos de propuestas a los agentes (extra)", () => {
+  it("pide segmentos al agente y el pedido aparece en Propuestas", async () => {
+    montar(<Segmentos />, "/segmentos");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Pedir propuestas al agente" }),
+    );
+    const dialogo = await screen.findByRole("dialog");
+    expect(within(dialogo).getByText(/presupuesto de IA/)).toBeInTheDocument();
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Confirmar" }));
+    expect(
+      await screen.findByText("Pedido enviado. Siga su avance en Propuestas."),
+    ).toBeInTheDocument();
+    expect(llamadas.some((u) => u.endsWith("/segmentos/proponer"))).toBe(true);
+    expect(
+      db.segmentos.some(
+        (s) => s.propuestoPor === "agente" && s.estado === "propuesto",
+      ),
+    ).toBe(true);
+  });
+
+  it("solo ofrece pedir campaña en un segmento aprobado y muestra el motivo si no se puede", async () => {
+    const { unmount } = montar(<Segmentos />, "/segmentos/seg2");
+    await screen.findByRole("button", { name: "Aprobar" });
+    expect(
+      screen.queryByRole("button", { name: "Pedir campaña al agente" }),
+    ).toBeNull();
+    unmount();
+    montar(<Segmentos />, "/segmentos/seg1");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Pedir campaña al agente" }),
+    );
+    const dialogo = await screen.findByRole("dialog");
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Confirmar" }));
+    expect(await within(dialogo).findByRole("alert")).toHaveTextContent(
+      /modo demostración/,
+    );
+  });
+
+  it("lista los pedidos con su estado y el motivo de un fallo", async () => {
+    vi.stubGlobal(
+      "fetch",
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith("/agentes/solicitudes"))
+          return Response.json([
+            {
+              id: "t1",
+              tipo: "proponer_campana",
+              estado: "fallida",
+              intentos: 1,
+              maxIntentos: 4,
+              error: "No hay contactos elegibles con base legal aprobada",
+              creadaEn: "2026-11-22T07:00:00Z",
+              terminadaEn: "2026-11-22T07:01:00Z",
+              segmentoId: "seg1",
+              segmento: "Industria de Palmira",
+            },
+            {
+              id: "t2",
+              tipo: "proponer_segmentos",
+              estado: "en_proceso",
+              intentos: 1,
+              maxIntentos: 4,
+              creadaEn: "2026-11-22T07:02:00Z",
+            },
+          ]);
+        return route(new Request(new URL(String(input), location.href), init));
+      },
+    );
+    montar(<Propuestas />, "/propuestas");
+    expect(
+      await screen.findByText("Campaña para «Industria de Palmira»"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No se pudo completar")).toBeInTheDocument();
+    expect(
+      screen.getByText("No hay contactos elegibles con base legal aprobada"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("El agente está trabajando")).toBeInTheDocument();
+  });
+});

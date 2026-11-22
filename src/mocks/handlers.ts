@@ -11,8 +11,11 @@ import {
   validarSecuencia,
 } from "../lib/reglas";
 export let db = crearDatos();
+/** Pedidos a los agentes en el modo demostración (se resuelven al instante). */
+let pedidos: z.infer<typeof S.solicitudAgenteSchema>[] = [];
 export const reset = () => {
   db = crearDatos();
+  pedidos = [];
 };
 const uid = () => crypto.randomUUID();
 function fail(message: string, status = 400) {
@@ -167,6 +170,7 @@ export async function route(request: Request): Promise<Response> {
     duplicados: db.duplicados,
   };
   if (method === "GET") {
+    if (path === "/agentes/solicitudes") return HttpResponse.json(pedidos);
     if (path === "/panel/resumen")
       return HttpResponse.json({
         contactables: db.contactos.filter((c) =>
@@ -533,6 +537,63 @@ export async function route(request: Request): Promise<Response> {
           conteo: muestra.length,
           muestra: muestra.slice(0, 8),
         });
+      }
+      if (id === "proponer") {
+        // Demostración: el Segmentador «responde» al instante con un segmento.
+        const segId = uid();
+        const reglas = [
+          {
+            campo: "municipio" as const,
+            operador: "es" as const,
+            valor: "Candelaria",
+          },
+        ];
+        db.segmentos.push({
+          id: segId,
+          nombre: "Industria de Candelaria (propuesto por el agente)",
+          reglas,
+          justificacion:
+            "Empresas industriales de Candelaria que encajan con el cliente ideal.",
+          tamano: db.contactos.filter((c) => coincide(c, db.empresas, reglas))
+            .length,
+          version: 1,
+          estado: "propuesto",
+          propuestoPor: "agente",
+        });
+        db.propuestas.unshift({
+          id: uid(),
+          objetivoId: segId,
+          agente: "segmentador",
+          tipo: "segmento",
+          estado: "pendiente",
+          resumen: "Aprobar segmento Industria de Candelaria",
+          version: 1,
+          versiones: [{ version: 1, contenido: { reglas }, fecha: iso() }],
+          fuentes: [],
+          creadaEn: iso(),
+        });
+        const tareaId = uid();
+        pedidos.unshift({
+          id: tareaId,
+          tipo: "proponer_segmentos",
+          estado: "completada",
+          intentos: 1,
+          maxIntentos: 4,
+          creadaEn: iso(),
+          terminadaEn: iso(),
+        });
+        log("pedir_propuestas_segmentos", "tareas", tareaId, null, null);
+        return HttpResponse.json({ ok: true, tareaId });
+      }
+      if (action === "proponer-campana") {
+        const s = db.segmentos.find((x) => x.id === id);
+        if (!s) throw Error("Segmento no encontrado");
+        if (s.estado !== "aprobado")
+          return fail("Apruebe el segmento antes de pedir una campaña", 409);
+        return fail(
+          "En el modo demostración el Estratega no redacta campañas nuevas; revise la propuesta de campaña de ejemplo en Propuestas.",
+          409,
+        );
       }
       if (!id)
         db.segmentos.push({
