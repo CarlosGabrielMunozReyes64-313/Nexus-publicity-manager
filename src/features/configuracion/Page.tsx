@@ -31,7 +31,7 @@ const EFECTO_REAL: Record<Integracion["id"], Efecto> = {
   },
   claude: {
     conectar:
-      "Se hará una llamada mínima de prueba al proveedor de agentes activo en el servidor (Claude o Gemini). Consume unos pocos tokens.",
+      "Se hará una llamada mínima de prueba al proveedor de agentes activo en el servidor (Claude o Gemini). Con Gemini se prueba además la búsqueda en Google que usa Descubrimiento. Consume unos pocos tokens y, con Gemini, una búsqueda.",
     desconectar:
       "Se borrará la clave comprobada. Con Claude como proveedor, el informe semanal automático deja de programarse; con Gemini, las tareas automáticas siguen las variables del servidor.",
   },

@@ -161,7 +161,7 @@ export default function Page() {
                 {b.estado === "terminada" &&
                   ` · ${b.resultados.length} resultado${b.resultados.length === 1 ? "" : "s"}`}
               </p>
-              {b.estado !== "terminada" && (
+              {b.estado !== "terminada" && b.estado !== "error" && (
                 <progress
                   aria-label={`Progreso ${b.criterios.consulta}`}
                   value={b.progreso}
@@ -174,6 +174,19 @@ export default function Page() {
                   role={b.estado === "error" ? "alert" : undefined}
                 >
                   {b.error}
+                </p>
+              )}
+              {b.estado === "terminada" && b.resultados.length === 0 && (
+                <p className="notice">
+                  La búsqueda terminó sin empresas cuyo nombre se pudiera
+                  comprobar en su sitio oficial. Pruebe con menos tipos o
+                  municipios por búsqueda.
+                </p>
+              )}
+              {b.resultados.some((r) => r.estado === "pendiente") && (
+                <p className="notice">
+                  Revise cada resultado y pulse «Aceptar» para crear la empresa
+                  y, si publica un correo corporativo, su contacto.
                 </p>
               )}
               <div className="grid" style={{ marginTop: 20 }}>

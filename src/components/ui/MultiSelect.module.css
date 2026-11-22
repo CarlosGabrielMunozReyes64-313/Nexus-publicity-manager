@@ -99,6 +99,10 @@
   background: var(--nx-light);
 }
 .option {
+  /* Contiene la casilla oculta: sin esto quedaba fuera de la lista con desplazamiento,
+     en su posición sin desplazar, y al marcarla el navegador movía toda la página
+     para mostrarla. */
+  position: relative;
   flex: 1;
   flex-direction: row;
   align-items: center;
@@ -109,6 +113,9 @@
 }
 .option input {
   position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
   opacity: 0;
   width: 1px;
   height: 1px;

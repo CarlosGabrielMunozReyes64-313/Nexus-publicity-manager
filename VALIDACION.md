@@ -11,6 +11,7 @@ Entorno de comprobación: Node 22.23.5, npm 10.9.9, Chrome for Testing 153 con P
 - `VITE_USE_MOCKS=false npm run build`: compilación de producción en `dist`.
 - Contrato: 33 respuestas reales del backend (guardadas por pytest) validadas con los esquemas Zod (`scripts/validar_contrato.ts`).
 - Navegador real: las 13 pantallas con la API real y un recorrido de las correcciones (sesión caída, importación CSV con cambio de empresa y resumen, integraciones, costo con fecha, embudo por periodo, auditoría filtrada y exportada, baja inválida).
+- Selector múltiple en Chrome: marcar una opción al final de la lista ya no desplaza la página.
 - Arranque desde los ZIP entregados con `scripts/probar_arranque.py` del backend: `npm ci`, `npm test` y `npm run build` sobre la copia extraída.
 
 ## Cobertura nueva
