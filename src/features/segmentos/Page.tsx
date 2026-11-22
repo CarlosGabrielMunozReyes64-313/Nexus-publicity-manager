@@ -53,12 +53,20 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
     item?.reglas ?? [{ campo: "municipio", operador: "es", valor: "Palmira" }],
   );
   const [j, setJ] = useState(item?.justificacion ?? "");
+  // Aprobar actúa sobre la versión guardada: con cambios sin guardar, el conteo
+  // mostrado no correspondería a lo que se aprueba.
+  const [sucio, setSucio] = useState(false);
+  const cambiarReglas = (nuevas: ReglaSegmento[]) => {
+    setReglas(nuevas);
+    setSucio(true);
+  };
   const c = useResource("/contactos", S.contactoSchema.array());
   const e = useResource("/empresas", S.empresaSchema.array());
   const cmd = useCommand();
   const matches = (c.data ?? []).filter((c) =>
     coincide(c, e.data ?? [], reglas),
   );
+  const sinGuardar = !!item && sucio;
   return (
     <div className="grid">
       <Card title="Constructor de reglas">
@@ -82,8 +90,10 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                 },
                 item ? "PATCH" : "POST",
               )
-            )
+            ) {
+              setSucio(false);
               close();
+            }
           }}
         >
           <label>
@@ -91,7 +101,10 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
             <input
               required
               value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
+              onChange={(e) => {
+                setNombre(e.target.value);
+                setSucio(true);
+              }}
             />
           </label>
           <label>
@@ -99,7 +112,10 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
             <textarea
               required
               value={j}
-              onChange={(e) => setJ(e.target.value)}
+              onChange={(e) => {
+                setJ(e.target.value);
+                setSucio(true);
+              }}
             />
           </label>
           {reglas.map((r, i) => (
@@ -110,7 +126,7 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                 label="Campo"
                 value={r.campo}
                 onChange={(v) =>
-                  setReglas(
+                  cambiarReglas(
                     reglas.map((x, k) => (k === i ? { ...x, campo: v } : x)),
                   )
                 }
@@ -130,7 +146,7 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                 label="Operador"
                 value={r.operador}
                 onChange={(v) =>
-                  setReglas(
+                  cambiarReglas(
                     reglas.map((x, k) =>
                       k === i
                         ? { ...x, operador: v as ReglaSegmento["operador"] }
@@ -146,7 +162,7 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                   required
                   value={r.valor}
                   onChange={(e) =>
-                    setReglas(
+                    cambiarReglas(
                       reglas.map((x, k) =>
                         k === i ? { ...x, valor: e.target.value } : x,
                       ),
@@ -155,7 +171,7 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                 />
               </label>
               <Button
-                onClick={() => setReglas(reglas.filter((_, k) => k !== i))}
+                onClick={() => cambiarReglas(reglas.filter((_, k) => k !== i))}
               >
                 Quitar regla
               </Button>
@@ -163,7 +179,7 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
           ))}
           <Button
             onClick={() =>
-              setReglas([
+              cambiarReglas([
                 ...reglas,
                 { campo: "sector", operador: "contiene", valor: "" },
               ])
@@ -174,10 +190,19 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
           <Button variant="primary" type="submit" disabled={cmd.pending}>
             Guardar para revisión
           </Button>
+          {sinGuardar && (
+            <p className="notice warning">
+              Hay cambios sin guardar. Guárdelos para revisión antes de aprobar
+              el segmento.
+            </p>
+          )}
           {item && (
             <div className="row">
               <Button
-                disabled={item.estado === "aprobado"}
+                disabled={item.estado === "aprobado" || sinGuardar}
+                title={
+                  sinGuardar ? "Guarde los cambios antes de aprobar" : undefined
+                }
                 onClick={() =>
                   cmd.ask(
                     "Aprobar segmento",

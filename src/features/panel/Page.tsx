@@ -1,3 +1,4 @@
+import { MODO_DEMO } from "../../lib/modo";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Sparkles, Inbox, Copy, ShieldCheck } from "lucide-react";
 import { useResource } from "../../api/hooks";
@@ -10,7 +11,7 @@ import {
   QueryState,
 } from "../../components/ui";
 import { Intro, Resource } from "../shared";
-import { fecha } from "../../lib/formato";
+import { fechaHora } from "../../lib/formato";
 export default function Page() {
   const q = useResource("/panel/resumen", S.resumenSchema);
   const proposals = useResource("/propuestas", S.propuestaSchema.array());
@@ -122,7 +123,9 @@ export default function Page() {
               ) : (
                 <p className="row muted" style={{ marginTop: 22 }}>
                   <ShieldCheck size={17} />
-                  Gmail listo · entorno de demostración
+                  {MODO_DEMO
+                    ? "Gmail listo · entorno de demostración"
+                    : "Gmail conectado · los envíos salen solo de campañas activas y aprobadas"}
                 </p>
               )
             }
@@ -141,6 +144,12 @@ export default function Page() {
                     <p className="notice warning" key={c.id}>
                       Revisar campaña:{" "}
                       <Link to={`/campanas/${c.id}`}>{c.nombre}</Link>
+                      {c.motivoPausa && (
+                        <>
+                          <br />
+                          <small>{c.motivoPausa}</small>
+                        </>
+                      )}
                     </p>
                   ))}
               </>
@@ -157,18 +166,20 @@ export default function Page() {
           </Resource>
         </Card>
         <Card title="Actividad reciente de los agentes">
-          <Resource path="/auditoria" schema={S.auditoriaSchema.array()}>
-            {(items) => (
+          <Resource
+            path="/auditoria/pagina?actor=agente&tamano=5"
+            schema={S.paginaAuditoriaSchema}
+          >
+            {({ items }) => (
               <div className="timeline">
                 {items
                   .filter((a) => a.actor.startsWith("agente"))
-                  .slice(0, 5)
                   .map((a) => (
                     <article key={a.id}>
                       <strong>{a.actor.replace("agente:", "")}</strong>
                       <p>{a.accion.replaceAll("_", " ")}</p>
                       <small>
-                        {fecha(a.fecha)} · {a.entidad} {a.entidadId}
+                        {fechaHora(a.fecha)} · {a.entidad} {a.entidadId}
                       </small>
                     </article>
                   ))}

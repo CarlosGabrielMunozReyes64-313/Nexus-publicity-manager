@@ -2,6 +2,14 @@ import type * as T from "../types";
 const hoy = new Date();
 export const iso = (dias = 0) =>
   new Date(hoy.getTime() - dias * 86400000).toISOString();
+/** Fecha de calendario de Bogotá (AAAA-MM-DD), igual que las métricas de la API. */
+export const dia = (dias = 0) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Bogota",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(hoy.getTime() - dias * 86400000));
 export const etapas: T.EtapaEmbudo[] = [
   "identificado",
   "contactable",
@@ -554,7 +562,7 @@ export function crearDatos() {
     segmentoId: "seg1",
     leads: i % 9 === 0 ? 1 : 0,
     clientes: i % 30 === 0 ? 1 : 0,
-    fecha: iso(89 - i),
+    fecha: dia(89 - i),
     enviados: 10 + (i % 11),
     respuestas: i % 5,
     visitas: 30 + (i % 27),

@@ -1,6 +1,6 @@
 import { http, HttpResponse, delay } from "msw";
 import { z } from "zod";
-import { crearDatos, iso } from "./data";
+import { crearDatos, dia, iso } from "./data";
 import * as S from "../api/schemas";
 import type * as T from "../types";
 import {
@@ -86,6 +86,52 @@ function reviseCampaign(c: T.Campana) {
     p.version++;
     p.versiones.push({ version: p.version, contenido, fecha: iso() });
   }
+}
+function diaBogota(valor: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(valor)
+    ? valor
+    : new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/Bogota",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(valor));
+}
+function filtrarAuditoria(u: URL) {
+  const p = (k: string) => (u.searchParams.get(k) ?? "").trim();
+  const contiene = (valor: string, filtro: string) =>
+    !filtro || valor.toLowerCase().includes(filtro.toLowerCase());
+  return db.auditoria
+    .filter(
+      (a) =>
+        contiene(a.actor, p("actor")) &&
+        contiene(a.accion, p("accion")) &&
+        contiene(a.entidad, p("entidad")) &&
+        (!p("entidadId") || a.entidadId === p("entidadId")) &&
+        (!p("desde") || diaBogota(a.fecha) >= p("desde")) &&
+        (!p("hasta") || diaBogota(a.fecha) <= p("hasta")),
+    )
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+}
+function ventanasCompatibles(
+  a: T.Secuencia["ventanaEnvio"],
+  b: T.LimitesEnvio["ventana"],
+) {
+  return (
+    a.dias.some((d) => b.dias.includes(d)) &&
+    (a.desde > b.desde ? a.desde : b.desde) <
+      (a.hasta < b.hasta ? a.hasta : b.hasta)
+  );
+}
+function conflictosDeHorario(ventana: T.LimitesEnvio["ventana"]) {
+  return db.campanas.filter((c) => {
+    const s = db.secuencias.find((x) => x.id === c.secuenciaId);
+    return (
+      ["aprobada", "activa", "pausada"].includes(c.estado) &&
+      s &&
+      !ventanasCompatibles(s.ventanaEnvio, ventana)
+    );
+  });
 }
 function candidates(c: T.Campana) {
   const seg = db.segmentos.find((s) => s.id === c.segmentoId);
@@ -199,6 +245,53 @@ export async function route(request: Request): Promise<Response> {
                   m.fecha.slice(0, 10) <= u.searchParams.get("hasta")!),
             ),
       );
+    if (resource === "auditoria" && id === "pagina") {
+      const filas = filtrarAuditoria(u);
+      const tamano = Math.min(200, Number(u.searchParams.get("tamano") ?? 50));
+      const pagina = Math.max(1, Number(u.searchParams.get("pagina") ?? 1));
+      return HttpResponse.json({
+        items: filas.slice((pagina - 1) * tamano, pagina * tamano),
+        total: filas.length,
+        pagina,
+        tamano,
+      });
+    }
+    if (resource === "auditoria" && id === "exportar") {
+      const columnas = [
+        "id",
+        "fecha",
+        "actor",
+        "accion",
+        "entidad",
+        "entidadId",
+      ] as const;
+      const celda = (v: unknown) =>
+        `"${String(v ?? "").replaceAll('"', '""')}"`;
+      const texto = [
+        columnas.join(","),
+        ...filtrarAuditoria(u).map((a) =>
+          columnas.map((k) => celda(a[k])).join(","),
+        ),
+      ].join("\r\n");
+      return new HttpResponse("\ufeff" + texto, {
+        headers: { "Content-Type": "text/csv; charset=utf-8" },
+      });
+    }
+    if (resource === "campanas" && !id)
+      return HttpResponse.json(
+        db.campanas.map((c) => {
+          const s = db.secuencias.find((x) => x.id === c.secuenciaId);
+          return s &&
+            ["aprobada", "activa", "pausada"].includes(c.estado) &&
+            !ventanasCompatibles(s.ventanaEnvio, db.limites.ventana)
+            ? {
+                ...c,
+                motivoPausa:
+                  "El horario de la secuencia aprobada no coincide con el horario global de envío. Ajuste Configuración → Límites y horarios o la secuencia y vuelva a reanudar la campaña.",
+              }
+            : c;
+        }),
+      );
     if (resource === "contactos" && action === "interacciones")
       return HttpResponse.json(
         db.interacciones.filter((i) => i.contactoId === id),
@@ -239,21 +332,57 @@ export async function route(request: Request): Promise<Response> {
         const data = z
           .object({ contactos: z.array(S.contactoSchema) })
           .parse(body);
-        for (const c of data.contactos) {
-          if (
-            db.contactos.some(
-              (x) => x.correo?.toLowerCase() === c.correo?.toLowerCase(),
-            )
+        if (
+          data.contactos.some(
+            (c) => c.baseLegal.tipo === "autorizacion_formulario",
           )
+        )
+          throw Error(
+            "La autorización de formulario debe proceder del webhook firmado",
+          );
+        if (
+          data.contactos.some(
+            (c) => !db.empresas.some((e) => e.id === c.empresaId),
+          )
+        )
+          return fail("Empresa no encontrada", 404);
+        const existentes = new Set(
+          db.contactos.map((x) => x.correo?.toLowerCase()).filter(Boolean),
+        );
+        const vistos = new Set<string>();
+        const conteo = { creados: 0, omitidos: 0, rechazados: 0 };
+        for (const c of data.contactos) {
+          const correo = (c.correo ?? "").toLowerCase();
+          if (!c.nombre.trim()) {
+            conteo.rechazados++;
             continue;
-          if (!db.empresas.some((e) => e.id === c.empresaId))
-            throw Error("Empresa no válida");
+          }
+          if (correo && (existentes.has(correo) || vistos.has(correo))) {
+            conteo.omitidos++;
+            continue;
+          }
+          vistos.add(correo);
           db.contactos.push({
             ...c,
             id: uid(),
+            correo: correo || undefined,
             baseLegal: { ...c.baseLegal, aprobadaPorAdmin: false },
+            evidencias: c.correo
+              ? [
+                  {
+                    campo: "correo",
+                    valor: correo,
+                    fuente: "manual",
+                    obtenidoEn: iso(),
+                    estado: "pendiente",
+                  },
+                ]
+              : [],
           });
+          conteo.creados++;
         }
+        log("importar", resource, "nuevo", null, conteo);
+        return HttpResponse.json({ ok: true, ...conteo });
       } else if (!id) {
         const c = S.contactoSchema.parse(body);
         db.contactos.push({
@@ -294,6 +423,10 @@ export async function route(request: Request): Promise<Response> {
         if (!e) throw Error("Empresa no encontrada");
         Object.assign(e, S.empresaSchema.partial().parse(body));
       }
+    } else if (resource === "duplicados" && action === "descartar") {
+      if (!db.duplicados.some((d) => d.id === id))
+        throw Error("Duplicado ya resuelto");
+      db.duplicados = db.duplicados.filter((d) => d.id !== id);
     } else if (resource === "duplicados") {
       const du = db.duplicados.find((d) => d.id === id);
       if (!du) throw Error("Duplicado no encontrado");
@@ -675,12 +808,43 @@ export async function route(request: Request): Promise<Response> {
           l.separacionSegundos[0] > l.separacionSegundos[1]
         )
           throw Error("Revise el orden de horas y separación");
+        const conflictos = conflictosDeHorario(l.ventana);
+        if (
+          conflictos.length &&
+          u.searchParams.get("pausarIncompatibles") !== "true"
+        )
+          return fail(
+            `El nuevo horario no tiene días u horas en común con la ventana aprobada de: ${conflictos
+              .map((c) => c.nombre)
+              .join(
+                ", ",
+              )}. Ajuste esas secuencias o confirme que desea pausar las campañas afectadas.`,
+            409,
+          );
         db.limites = l;
+        conflictos.forEach((c) => {
+          if (c.estado === "activa") c.estado = "pausada";
+          db.inscripciones
+            .filter((i) => i.campanaId === c.id && i.estado === "activa")
+            .forEach((i) => {
+              i.estado = "pausada";
+              i.proximoEnvio = undefined;
+            });
+        });
+        log("PUT", resource, "limites", null, l);
+        return HttpResponse.json({
+          ok: true,
+          pausadas: conflictos.map((c) => c.nombre),
+        });
       } else db.clienteIdeal = S.clienteIdealSchema.parse(body);
     } else if (resource === "integraciones") {
       const i = db.integraciones.find((x) => x.id === id);
       if (!i) throw Error("Integración no encontrada");
       i.estado = action === "conectar" ? "conectada" : "desconectada";
+      i.detalle =
+        action === "conectar"
+          ? "Simulación · conexión comprobada"
+          : "Simulación · desconectada por el administrador";
       i.ultimaSincronizacion = iso();
       if (i.id === "gmail" && i.estado === "desconectada")
         db.campanas
@@ -696,6 +860,12 @@ export async function route(request: Request): Promise<Response> {
                 ins.proximoEnvio = undefined;
               });
           });
+      log(action ?? method, resource, id ?? "nuevo", null, i);
+      return HttpResponse.json({
+        ok: true,
+        estado: i.estado,
+        detalle: i.detalle,
+      });
     } else if (resource === "supresiones") {
       const s = S.supresionSchema.parse(body);
       if (!s.correo && !s.dominio) throw Error("Indique un correo o dominio");
@@ -722,8 +892,32 @@ export async function route(request: Request): Promise<Response> {
           creadaEn: iso(),
         });
     } else if (resource === "informes" && id === "costos") {
-      const b = z.object({ costoUSD: z.number().nonnegative() }).parse(body);
-      db.metricas[db.metricas.length - 1].costoUSD = b.costoUSD;
+      const b = z
+        .object({
+          costoUSD: z.number().nonnegative(),
+          fecha: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
+        })
+        .parse(body);
+      const fecha = b.fecha ?? dia();
+      if (fecha > dia()) throw Error("La fecha del gasto no puede ser futura");
+      const fila = db.metricas.find((m) => diaBogota(m.fecha) === fecha);
+      if (fila) fila.costoUSD = (fila.costoUSD ?? 0) + b.costoUSD;
+      else
+        db.metricas.push({
+          fecha,
+          fuente: "directo_desconocido",
+          enviados: 0,
+          respuestas: 0,
+          visitas: 0,
+          leads: 0,
+          clientes: 0,
+          costoUSD: b.costoUSD,
+        });
+      log("costos", resource, fecha, null, b);
+      return HttpResponse.json({ ok: true, fecha });
     } else return fail("Ruta no disponible", 404);
     log(
       action ?? method,

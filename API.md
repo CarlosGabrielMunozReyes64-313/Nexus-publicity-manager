@@ -16,25 +16,31 @@ Base: `VITE_API_URL`. Todas las peticiones incluyen `credentials: include`; cont
 
 El contrato base del documento original está implementado en `src/mocks/handlers.ts`. Las siguientes rutas adicionales permiten completar las interacciones que la especificación describe sin darles un endpoint:
 
-| Método | Ruta                                      | Propósito                                                           |
-| ------ | ----------------------------------------- | ------------------------------------------------------------------- |
-| GET    | `/auth/session`                           | Sesión válida: `{ok:true}`; sin sesión: 401                         |
-| GET    | `/auth/google`                            | Redirección a OAuth, solo API real                                  |
-| GET    | `/auth/logout`                            | Cierre de sesión y redirección, solo API real                       |
-| GET    | `/secuencias`                             | Listar secuencias                                                   |
-| PATCH  | `/segmentos/:id`                          | Guardar reglas o archivar; invalida campañas asociadas              |
-| POST   | `/campanas/:id/inscribir`                 | Body: arreglo de IDs de contacto; valida reglas y elegibilidad      |
-| POST   | `/respuestas/:id/reunion`                 | Registra reunión y finaliza la inscripción                          |
-| POST   | `/informes/costos`                        | `{costoUSD:number}`; se asocia al último día de métricas en el mock |
-| POST   | `/informes/recomendaciones/:id/aprobar`   | Crea propuesta de mejora pendiente                                  |
-| POST   | `/informes/recomendaciones/:id/descartar` | Descarta la recomendación                                           |
-| POST   | `/dev/reset`                              | Solo demostración: restaura los datos                               |
+| Método | Ruta                                              | Propósito                                                                                                                                                                        |
+| ------ | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/auth/session`                                   | Sesión válida: `{ok:true}`; sin sesión: 401                                                                                                                                      |
+| GET    | `/auth/google`                                    | Redirección a OAuth, solo API real                                                                                                                                               |
+| GET    | `/auth/logout`                                    | Cierre de sesión y redirección, solo API real                                                                                                                                    |
+| GET    | `/secuencias`                                     | Listar secuencias                                                                                                                                                                |
+| PATCH  | `/segmentos/:id`                                  | Guardar reglas o archivar; invalida campañas asociadas                                                                                                                           |
+| POST   | `/campanas/:id/inscribir`                         | Body: arreglo de IDs de contacto; valida reglas y elegibilidad                                                                                                                   |
+| POST   | `/respuestas/:id/reunion`                         | Registra reunión y finaliza la inscripción                                                                                                                                       |
+| POST   | `/informes/costos`                                | `{costoUSD:number, fecha?:"AAAA-MM-DD", concepto?:string}`; fecha real del gasto (no futura). Devuelve `{ok:true, fecha}`                                                        |
+| GET    | `/auditoria/pagina`                               | Filtros `actor`, `accion`, `entidad` (parte del texto), `entidadId`, `desde`, `hasta` (días de Bogotá), `pagina`, `tamano`; devuelve `{items,total,pagina,tamano}`               |
+| GET    | `/auditoria/exportar`                             | Mismos filtros; CSV con todas las coincidencias (sin límite de 500)                                                                                                              |
+| POST   | `/duplicados/:id/descartar`                       | Marca el par como «no es duplicado»                                                                                                                                              |
+| PUT    | `/configuracion/limites?pausarIncompatibles=true` | Sin el parámetro, un horario sin coincidencia con campañas aprobadas responde 409 con sus nombres; con él, guarda y pausa esas campañas. Devuelve `{ok:true, pausadas:string[]}` |
+| POST   | `/informes/recomendaciones/:id/aprobar`           | Crea propuesta de mejora pendiente                                                                                                                                               |
+| POST   | `/informes/recomendaciones/:id/descartar`         | Descarta la recomendación                                                                                                                                                        |
+| POST   | `/dev/reset`                                      | Solo demostración: restaura los datos                                                                                                                                            |
 
 La sesión simulada se guarda en sessionStorage; las rutas `/auth/*` no se llaman en ese modo.
 
 ## Payloads de acciones especiales
 
-- Importar: `{contactos: Contacto[]}`. El mock ignora la aprobación legal entrante y elimina duplicados por correo.
+- Importar: `{contactos: Contacto[]}`. Ignora la aprobación legal entrante, omite duplicados por correo (existentes o repetidos en el archivo) y rechaza filas inválidas. Devuelve `{ok:true, creados, omitidos, rechazados}`. La base `autorizacion_formulario` solo llega por el webhook firmado.
+- Conectar o desconectar integración: devuelve `{ok:true, estado, detalle}` con el resultado real (por ejemplo, `error` si la credencial no funciona).
+- Embudo: `GET /embudo?desde&hasta` filtra por fecha de creación del contacto (días de Bogotá); cada contacto aparece en su etapa actual.
 - Excluir: `{motivo:string}` (mínimo 3 caracteres).
 - Aprobar base legal: POST sin contenido, después de registrar sus datos vía PATCH del contacto.
 - Descubrimiento: POST `/descubrimiento/busquedas` con `BusquedaDescubrimiento.criterios`.
@@ -52,7 +58,9 @@ La sesión simulada se guarda en sessionStorage; las rutas `/auth/*` no se llama
 
 `PropuestaAgente.objetivoId` vincula la propuesta con su campaña, segmento, empresa o contacto. En propuestas nuevas de campaña, las versiones almacenan la secuencia completa.
 
-`MetricaDiaria` añade `campanaId`, `segmentoId`, `leads` y `clientes` para permitir agrupación y costos por periodo sin inferir atribuciones.
+`MetricaDiaria` añade `campanaId`, `segmentoId`, `leads` y `clientes` para permitir agrupación y costos por periodo sin inferir atribuciones. `fecha` es un día de calendario (`AAAA-MM-DD`, Bogotá) y cada evento cuenta en su propia fecha. `costoUSD` es el total del día y aparece en una sola fila por fecha: agregue por fecha antes de calcular costo por lead y costo de adquisición.
+
+Paginación opcional en los listados: `GET /empresas?limite=50&desplazamiento=0` (máximo 500) devuelve esa porción y el total en la cabecera `X-Total-Count`; sin parámetros se devuelve el arreglo completo. Los listados (`GET /empresas`, `GET /contactos`) devuelven `evidencias: []`; las evidencias completas están en la ficha (`GET /empresas/:id`, `GET /contactos/:id`). `Campana.motivoPausa` explica por qué una campaña no puede enviar (horario incompatible o Gmail desconectado).
 
 La regla especial de segmento `campo: contactoIds`, `operador: es`, `valor: c1,c2,...` conserva una selección manual exacta. Los demás campos admitidos son municipio, sector, tamaño, puntaje, etapa, origen y baseLegal.
 

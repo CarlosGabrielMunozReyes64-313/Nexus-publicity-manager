@@ -197,6 +197,8 @@ export interface Campana {
   huellaAprobada?: string;
   topeDiario: number;
   creadaEn: string;
+  /** Motivo visible cuando la campaña no puede enviar (horario o Gmail). */
+  motivoPausa?: string;
   metricas: MetricasCampana;
 }
 

@@ -154,6 +154,7 @@ export const campanaSchema = z.object({
   huellaAprobada: str.optional(),
   topeDiario: num,
   creadaEn: str,
+  motivoPausa: str.optional(),
   metricas: z.object({
     inscritos: num,
     enviados: num,
@@ -396,4 +397,24 @@ export const resumenSchema = z.object({
   enviadosHoy: num,
 });
 export const embudoSchema = z.array(z.object({ etapa: str, conteo: num }));
-export const okSchema = z.object({ ok: z.literal(true) });
+export const okSchema = z.object({ ok: z.literal(true) }).passthrough();
+/** Resultado de POST /contactos/importar. */
+export const importacionSchema = z.object({
+  ok: z.literal(true),
+  creados: num.int().nonnegative(),
+  omitidos: num.int().nonnegative(),
+  rechazados: num.int().nonnegative(),
+});
+/** Resultado de conectar o desconectar una integración. */
+export const cambioIntegracionSchema = z.object({
+  ok: z.literal(true),
+  estado: z.enum(["conectada", "desconectada", "error"]),
+  detalle: str,
+});
+/** Página del registro de auditoría filtrada en el servidor. */
+export const paginaAuditoriaSchema = z.object({
+  items: z.array(auditoriaSchema),
+  total: num.int().nonnegative(),
+  pagina: num.int().positive(),
+  tamano: num.int().positive(),
+});

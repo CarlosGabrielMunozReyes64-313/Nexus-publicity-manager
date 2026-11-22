@@ -1,13 +1,186 @@
-import { API_URL } from "../../api/client";
-import { useState } from "react";
-import type { Marca, LimitesEnvio } from "../../types";
+import { API_URL, ApiError } from "../../api/client";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { z } from "zod";
+import type { Marca, LimitesEnvio, Integracion } from "../../types";
 import * as S from "../../api/schemas";
 import { Button, Card, Badge, Tabs, Table } from "../../components/ui";
 import { Intro, Resource, useCommand } from "../shared";
-import { fecha } from "../../lib/formato";
-export default function Page() {
-  const [tab, setTab] = useState("Marca");
+import { fecha, fechaHora } from "../../lib/formato";
+import { MODO_DEMO } from "../../lib/modo";
+type Efecto = { conectar: string; desconectar: string };
+/** Qué ocurre realmente con la API activa, explicado antes de confirmar. */
+const EFECTO_REAL: Record<Integracion["id"], Efecto> = {
+  gmail: {
+    conectar:
+      "Se abrirá Google para autorizar el envío y la lectura de respuestas con la cuenta de envío configurada en el servidor (GMAIL_CUENTA_ENVIO).",
+    desconectar:
+      "Se revocará la autorización de Gmail en Google, se pausarán todas las campañas activas y se cancelarán los envíos programados. Para volver a enviar deberá autorizar de nuevo y reanudar cada campaña.",
+  },
+  formulario: {
+    conectar:
+      "El receptor empezará a aceptar envíos firmados del formulario del sitio (requiere FORMULARIO_WEBHOOK_SECRETO en el servidor). Cada envío crea o actualiza un contacto con la autorización pendiente de su aprobación.",
+    desconectar:
+      "El receptor rechazará los envíos del formulario (respuesta 503) y no creará contactos hasta que vuelva a conectarlo. El sitio puede reintentar después con el mismo identificador sin duplicar datos.",
+  },
+  verificador: {
+    conectar:
+      "Se hará una consulta de prueba a Hunter con la clave del servidor. Después, los correos nuevos se verificarán con Hunter además de DNS.",
+    desconectar:
+      "Se borrará la clave comprobada. Los correos nuevos solo se comprobarán por sintaxis y DNS y quedarán como «desconocido».",
+  },
+  claude: {
+    conectar:
+      "Se hará una llamada mínima de prueba al proveedor de agentes activo en el servidor (Claude o Gemini). Consume unos pocos tokens.",
+    desconectar:
+      "Se borrará la clave comprobada. Con Claude como proveedor, el informe semanal automático deja de programarse; con Gemini, las tareas automáticas siguen las variables del servidor.",
+  },
+  ga4: {
+    conectar:
+      "Se hará una consulta de prueba a Google Analytics 4 con la cuenta de servicio. Después se importarán visitas diarias agregadas.",
+    desconectar:
+      "Se dejarán de importar visitas de GA4. Los datos ya importados se conservan.",
+  },
+  search_console: {
+    conectar:
+      "Se hará una consulta de prueba a Search Console. Después se importarán consultas de búsqueda diarias.",
+    desconectar:
+      "Se dejarán de importar consultas de Search Console. Los datos ya importados se conservan.",
+  },
+};
+const RESULTADO_GMAIL: Record<string, string> = {
+  conectado: "Gmail quedó conectado. Reanude las campañas que desee activar.",
+  cancelado: "La autorización de Gmail se canceló; no se hizo ningún cambio.",
+  cuenta:
+    "La cuenta elegida no es la cuenta de envío configurada (GMAIL_CUENTA_ENVIO). Vuelva a intentar con esa cuenta.",
+  permisos:
+    "Google no concedió todos los permisos (enviar y leer). Vuelva a conectar y acepte ambos.",
+  sin_conexion:
+    "Google no entregó permiso sin conexión. Quite el acceso de la aplicación en su cuenta de Google y vuelva a conectar.",
+  sesion: "Su sesión venció durante la autorización. Inicie sesión y repita.",
+  solicitud:
+    "La solicitud de autorización venció o no es válida. Vuelva a pulsar Conectar.",
+};
+/** Dirección pública del receptor: el mismo origen por el que el navegador llega a la API. */
+export const urlWebhook = () =>
+  new URL(`${API_URL}/webhooks/formulario`, window.location.origin).href;
+function Copiar({ texto }: { texto: string }) {
+  const [copiado, setCopiado] = useState(false);
+  return (
+    <Button
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(texto);
+          setCopiado(true);
+          setTimeout(() => setCopiado(false), 2500);
+        } catch {
+          window.prompt("Copie la dirección:", texto);
+        }
+      }}
+    >
+      {copiado ? "Copiada ✓" : "Copiar dirección"}
+    </Button>
+  );
+}
+function Integraciones({ items }: { items: Integracion[] }) {
   const cmd = useCommand();
+  return (
+    <div className="grid">
+      {items.map((i) => {
+        const conectada = i.estado === "conectada";
+        const accion = conectada ? "desconectar" : "conectar";
+        const efecto = MODO_DEMO
+          ? "Modo demostración: solo cambia el estado simulado; no se conecta a servicios externos."
+          : EFECTO_REAL[i.id][accion];
+        return (
+          <Card key={i.id} title={i.nombre}>
+            <Badge>{i.estado}</Badge>
+            <p>{i.detalle}</p>
+            <p>
+              <small>
+                Última sincronización:{" "}
+                {i.ultimaSincronizacion
+                  ? fechaHora(i.ultimaSincronizacion)
+                  : "Sin datos"}
+              </small>
+            </p>
+            {i.id === "formulario" && (
+              <>
+                <label>
+                  {MODO_DEMO
+                    ? "Webhook (demostración)"
+                    : "Dirección del webhook (POST firmado)"}
+                  <input readOnly value={urlWebhook()} />
+                </label>
+                <Copiar texto={urlWebhook()} />
+                <p>
+                  <small>
+                    {MODO_DEMO
+                      ? "Secreto ficticio de demostración: no-es-un-secreto-real."
+                      : "El secreto se configura en el servidor (FORMULARIO_WEBHOOK_SECRETO) y en el backend del sitio. Nunca se muestra ni se envía al navegador."}
+                  </small>
+                </p>
+              </>
+            )}
+            <p className="muted">
+              <small>
+                {conectada ? "Al desconectar: " : "Al conectar: "}
+                {efecto}
+              </small>
+            </p>
+            <Button
+              variant={conectada ? "danger" : undefined}
+              onClick={() =>
+                i.id === "gmail" && !conectada && !MODO_DEMO
+                  ? cmd.confirm({
+                      title: "Conectar Gmail",
+                      summary: efecto,
+                      run: async () => {
+                        window.location.assign(
+                          `${API_URL}/integraciones/gmail/autorizar`,
+                        );
+                        return "Abriendo Google…";
+                      },
+                    })
+                  : cmd.confirm({
+                      title: `${conectada ? "Desconectar" : "Conectar"} ${i.nombre}`,
+                      summary: <p>{efecto}</p>,
+                      run: async () => {
+                        const r = S.cambioIntegracionSchema.safeParse(
+                          await cmd.run(`/integraciones/${i.id}/${accion}`),
+                        );
+                        if (!r.success) return "Cambio guardado correctamente.";
+                        return r.data.estado === "error"
+                          ? `No se pudo conectar: ${r.data.detalle}`
+                          : r.data.detalle;
+                      },
+                    })
+              }
+            >
+              {conectada ? "Desconectar" : "Conectar"}
+              {MODO_DEMO ? " (simulado)" : ""}
+            </Button>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+export default function Page() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const resultadoGmail = new URLSearchParams(location.search).get("gmail");
+  const [tab, setTab] = useState(resultadoGmail ? "Integraciones" : "Marca");
+  const cmd = useCommand();
+  const { notify } = cmd;
+  useEffect(() => {
+    if (!resultadoGmail) return;
+    notify(
+      RESULTADO_GMAIL[resultadoGmail] ??
+        "No se pudo completar la autorización de Gmail.",
+    );
+    navigate("/configuracion", { replace: true });
+  }, [resultadoGmail, navigate, notify]);
   return (
     <>
       <Intro
@@ -187,63 +360,10 @@ export default function Page() {
       )}
       {tab === "Integraciones" && (
         <Resource path="/integraciones" schema={S.integracionSchema.array()}>
-          {(items) => (
-            <div className="grid">
-              {items.map((i) => (
-                <Card key={i.id} title={i.nombre}>
-                  <Badge>{i.estado}</Badge>
-                  <p>{i.detalle}</p>
-                  <p>
-                    <small>
-                      Última sincronización:{" "}
-                      {i.ultimaSincronizacion
-                        ? fecha(i.ultimaSincronizacion)
-                        : "Sin datos"}
-                    </small>
-                  </p>
-                  {i.id === "formulario" && (
-                    <>
-                      <label>
-                        Webhook (demostración)
-                        <input
-                          readOnly
-                          value="https://nexus.example/api/formulario/webhook"
-                        />
-                      </label>
-                      <label>
-                        Secreto
-                        <input
-                          type="password"
-                          readOnly
-                          value="no-es-un-secreto-real"
-                        />
-                      </label>
-                    </>
-                  )}
-                  <Button
-                    onClick={() =>
-                      i.id === "gmail" && i.estado !== "conectada" && import.meta.env.VITE_USE_MOCKS !== "true"
-                        ? window.location.assign(`${API_URL}/integraciones/gmail/autorizar`)
-                        : cmd.ask(
-                        i.estado === "conectada"
-                          ? "Desconectar integración"
-                          : "Conectar integración",
-                        `${i.nombre}: solo se actualizará el estado simulado; no se conectará a servicios externos.`,
-                        `/integraciones/${i.id}/${i.estado === "conectada" ? "desconectar" : "conectar"}`,
-                      )
-                    }
-                  >
-                    {i.estado === "conectada"
-                      ? "Desconectar"
-                      : "Conectar (simulado)"}
-                  </Button>
-                </Card>
-              ))}
-            </div>
-          )}
+          {(items) => <Integraciones items={items} />}
         </Resource>
       )}
-      {import.meta.env.VITE_USE_MOCKS === "true" && (
+      {MODO_DEMO && (
         <details style={{ marginTop: 32 }}>
           <summary>Opciones de desarrollo</summary>
           <p>El estado vive en memoria y se reinicia al recargar la página.</p>
@@ -311,24 +431,79 @@ function Brand({ initial }: { initial: Marca }) {
     </Card>
   );
 }
+const pausadasSchema = z.object({ pausadas: z.array(z.string()).optional() });
 function Limits({ initial }: { initial: LimitesEnvio }) {
   const [l, setL] = useState(initial);
+  const [conflicto, setConflicto] = useState("");
   const cmd = useCommand();
+  const errores = [
+    !l.ventana.dias.length && "Elija al menos un día de envío.",
+    l.ventana.desde >= l.ventana.hasta &&
+      "La hora «desde» debe ser anterior a «hasta».",
+    l.separacionSegundos[0] > l.separacionSegundos[1] &&
+      "La separación mínima no puede superar la máxima.",
+  ].filter(Boolean) as string[];
+  const guardar = async (pausar: boolean) => {
+    const r = pausadasSchema.parse(
+      await cmd.run(
+        `/configuracion/limites${pausar ? "?pausarIncompatibles=true" : ""}`,
+        { ...l, ventana: { ...l.ventana, dias: [...l.ventana.dias].sort() } },
+        "PUT",
+      ),
+    );
+    setConflicto("");
+    return r.pausadas?.length
+      ? `Límites guardados. En pausa por horario incompatible: ${r.pausadas.join(", ")}.`
+      : "Límites guardados.";
+  };
   return (
     <Card title="Ritmo y horarios de envío">
       <form
         className="stack"
         onSubmit={(e) => {
           e.preventDefault();
-          cmd.ask(
-            "Actualizar límites",
-            "Estos límites regirán las próximas ventanas de envío.",
-            "/configuracion/limites",
-            l,
-            "PUT",
-          );
+          if (errores.length) return;
+          cmd.confirm({
+            title: "Actualizar límites",
+            summary:
+              "Estos límites regirán las próximas ventanas de envío. Se comprobará que el nuevo horario siga coincidiendo con las campañas aprobadas.",
+            run: async () => {
+              try {
+                return await guardar(false);
+              } catch (error) {
+                if (error instanceof ApiError && error.status === 409) {
+                  setConflicto(error.message);
+                  return "No se guardó: el horario no coincide con algunas campañas.";
+                }
+                throw error;
+              }
+            },
+          });
         }}
       >
+        {conflicto && (
+          <div className="notice warning" role="alert">
+            <p>{conflicto}</p>
+            <Button
+              variant="danger"
+              onClick={() =>
+                cmd.confirm({
+                  title: "Guardar y pausar campañas afectadas",
+                  summary:
+                    "Se guardará el nuevo horario y se pausarán las campañas cuya ventana aprobada ya no tiene días u horas en común. Las demás campañas siguen enviando.",
+                  run: () => guardar(true),
+                })
+              }
+            >
+              Guardar y pausar las campañas afectadas
+            </Button>
+          </div>
+        )}
+        {errores.map((e) => (
+          <p key={e} role="alert" className="danger">
+            {e}
+          </p>
+        ))}
         <div className="grid">
           {(
             [
@@ -423,7 +598,7 @@ function Limits({ initial }: { initial: LimitesEnvio }) {
             />
           </label>
         </div>
-        <Button type="submit" variant="primary">
+        <Button type="submit" variant="primary" disabled={errores.length > 0}>
           Guardar límites
         </Button>
       </form>

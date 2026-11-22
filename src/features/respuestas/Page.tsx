@@ -1,3 +1,4 @@
+import { MODO_DEMO } from "../../lib/modo";
 import { useState } from "react";
 import { useResource } from "../../api/hooks";
 import * as S from "../../api/schemas";
@@ -123,8 +124,9 @@ function Detail({ r }: { r: Respuesta }) {
                   <p>Para: {c.data?.correo}</p>
                   <pre>{text}</pre>
                   <small>
-                    En modo mock se registra el mensaje; no se envía correo
-                    real.
+                    {MODO_DEMO
+                      ? "Modo demostración: se registra el mensaje; no se envía correo real."
+                      : "Se enviará un correo real por Gmail en el mismo hilo de la conversación. No se puede deshacer."}
                   </small>
                 </>,
                 `/respuestas/${r.id}/enviar-respuesta`,
@@ -173,6 +175,10 @@ function Detail({ r }: { r: Respuesta }) {
                 {
                   id: "nuevo",
                   empresaId: c.data?.empresaId,
+                  contactoId: r.contactoId,
+                  // Vincula la oportunidad con la respuesta y su campaña de origen
+                  // para que los cierres cuenten en los informes de la campaña.
+                  respuestaOrigenId: r.id,
                   etapa: "discovery",
                   reto,
                   valorEstimadoCOP: valor,

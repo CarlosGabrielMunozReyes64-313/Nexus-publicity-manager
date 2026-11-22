@@ -42,18 +42,43 @@ describe("Flujos del contrato mock", () => {
     expect(db.auditoria).toHaveLength(50);
   });
   it("importa CSV mapeado sin duplicados ni aprobación implícita", async () => {
+    // La base legal de formulario solo llega por el webhook firmado; aquí se usa
+    // una registrada «aprobada» para comprobar que importar nunca la aprueba.
+    const baseLegal = {
+      ...db.contactos[0].baseLegal,
+      tipo: "autorizacion_registrada" as const,
+      aprobadaPorAdmin: true,
+    };
     const c = {
       ...db.contactos[0],
       id: "nuevo",
       nombre: "Importación ejemplo",
       correo: "importada@demo.example",
+      baseLegal,
     };
     const r = await call("/contactos/importar", "POST", {
-      contactos: [c, c, db.contactos[0]],
+      contactos: [c, c, { ...db.contactos[0], baseLegal }],
     });
     expect(r.ok).toBe(true);
+    expect(await r.json()).toEqual({
+      ok: true,
+      creados: 1,
+      omitidos: 2,
+      rechazados: 0,
+    });
     expect(db.contactos).toHaveLength(61);
     expect(db.contactos.at(-1)?.baseLegal.aprobadaPorAdmin).toBe(false);
+    const formulario = await call("/contactos/importar", "POST", {
+      contactos: [{ ...c, correo: "otra@demo.example" }],
+    });
+    expect(formulario.ok).toBe(true);
+    expect(
+      (
+        await call("/contactos/importar", "POST", {
+          contactos: [db.contactos[0]],
+        })
+      ).status,
+    ).toBe(400);
   });
   it("aceptar descubrimiento crea empresa y contacto no elegible", async () => {
     const r = await call("/descubrimiento/resultados/d1/aceptar", "POST", {});

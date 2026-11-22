@@ -85,7 +85,9 @@ function Editor({ initial }: { initial: Secuencia }) {
   const cmd = useCommand();
   const contactos = useResource("/contactos", S.contactoSchema.array());
   const marca = useResource("/configuracion/marca", S.marcaSchema);
-  const [contacto, setContacto] = useState("c1");
+  // Sin un id fijo de demostración: en la API real los contactos usan UUID.
+  const [elegido, setContacto] = useState("");
+  const contacto = elegido || contactos.data?.[0]?.id || "";
   const [preview, setPreview] = useState<{
     pasos: Secuencia["pasos"];
     respaldo: string[];
@@ -296,6 +298,7 @@ function Editor({ initial }: { initial: Secuencia }) {
               </small>
             </p>
             <Button
+              disabled={!contacto}
               onClick={async () => {
                 try {
                   const p = await request(

@@ -12,6 +12,7 @@ import {
 import { MultiSelect } from "../../components/ui/MultiSelect";
 import { Intro, useCommand } from "../shared";
 import { MUNICIPIOS, SECTORES, TIPOS_EMPRESA, armarConsulta } from "./opciones";
+import { MODO_DEMO } from "../../lib/modo";
 
 export default function Page() {
   const q = useResource("/descubrimiento/busquedas", S.busquedaSchema.array());
@@ -47,16 +48,45 @@ export default function Page() {
         <form
           className="toolbar"
           style={{ alignItems: "flex-start" }}
-          onSubmit={async (e) => {
+          onSubmit={(e) => {
             e.preventDefault();
             if (!tipos.length) return;
-            const ok = await cmd.save("/descubrimiento/busquedas", {
-              consulta: armarConsulta(tipos),
-              municipios,
-              sectores,
-              tamano,
+            cmd.confirm({
+              title: MODO_DEMO
+                ? "Iniciar búsqueda simulada"
+                : "Iniciar búsqueda real",
+              summary: MODO_DEMO ? (
+                <p>
+                  Modo demostración: se generará un resultado ficticio; no se
+                  consulta ningún servicio externo.
+                </p>
+              ) : (
+                <>
+                  <p>
+                    El agente de IA configurado en el servidor buscará en
+                    fuentes web públicas y comprobará cada cita en el sitio
+                    oficial de la empresa.
+                  </p>
+                  <p>
+                    Consume presupuesto de IA dentro de los topes por tarea y
+                    mensual del servidor. Los resultados quedan pendientes de su
+                    revisión: no se crean contactos ni se envían correos.
+                  </p>
+                </>
+              ),
+              run: async () => {
+                await cmd.run("/descubrimiento/busquedas", {
+                  consulta: armarConsulta(tipos),
+                  municipios,
+                  sectores,
+                  tamano,
+                });
+                void q.refetch();
+                return MODO_DEMO
+                  ? "Búsqueda simulada en curso."
+                  : "Búsqueda en cola. El progreso se actualiza en esta pantalla.";
+              },
             });
-            if (ok) q.refetch();
           }}
         >
           <MultiSelect
@@ -188,7 +218,9 @@ export default function Page() {
                         onClick={() =>
                           cmd.ask(
                             "Aceptar resultado",
-                            `Se creará ${r.empresa.razonSocial} y un contacto corporativo sin base legal aprobada ni correo verificado.`,
+                            r.contactoCorporativo.correo
+                              ? `Se creará ${r.empresa.razonSocial} y un contacto corporativo (${r.contactoCorporativo.correo}) sin base legal aprobada ni correo verificado.`
+                              : `Se creará ${r.empresa.razonSocial} con sus evidencias. No hay correo corporativo publicado, así que no se crea ningún contacto.`,
                             `/descubrimiento/resultados/${r.id}/aceptar`,
                           )
                         }

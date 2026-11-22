@@ -41,7 +41,10 @@ export default function Page() {
               <Link to="/empresas">← Empresas</Link>
               <div className="grid" style={{ marginTop: 20 }}>
                 <Card title="Datos de la empresa">
-                  <EvidenceList items={e.evidencias} />
+                  {/* El listado es liviano: la ficha pide las evidencias completas. */}
+                  <Resource path={`/empresas/${e.id}`} schema={S.empresaSchema}>
+                    {(detalle) => <EvidenceList items={detalle.evidencias} />}
+                  </Resource>
                   <p>
                     <Badge>{e.estadoCuenta}</Badge> · {e.sector} · {e.municipio}
                   </p>
@@ -113,7 +116,9 @@ export default function Page() {
                     {(items) => (
                       <small>
                         {items.length} acciones registradas ·{" "}
-                        <Link to="/auditoria">Ver registro</Link>
+                        <Link to={`/auditoria?entidadId=${e.id}`}>
+                          Ver registro
+                        </Link>
                       </small>
                     )}
                   </Resource>
@@ -249,10 +254,34 @@ export default function Page() {
   );
 }
 function Duplicate({ d, empresas }: { d: Duplicado; empresas: Empresa[] }) {
-  const a = empresas.find((e) => e.id === d.principalId)!;
-  const b = empresas.find((e) => e.id === d.duplicadoId)!;
+  const a = empresas.find((e) => e.id === d.principalId);
+  const b = empresas.find((e) => e.id === d.duplicadoId);
   const [choices, setChoices] = useState<Record<string, string>>({});
   const cmd = useCommand();
+  const descartar = (
+    <Button
+      onClick={() =>
+        cmd.ask(
+          "No es duplicado",
+          "El par se marcará como revisado y no se fusionará ninguna ficha.",
+          `/duplicados/${d.id}/descartar`,
+        )
+      }
+    >
+      No es duplicado
+    </Button>
+  );
+  // Una de las fichas pudo fusionarse con otra: no se rompe la pantalla.
+  if (!a || !b)
+    return (
+      <Card title={d.motivo}>
+        <p className="notice warning">
+          Una de las empresas de este par ya no está disponible (posiblemente se
+          fusionó). Puede descartar el aviso.
+        </p>
+        {descartar}
+      </Card>
+    );
   return (
     <Card title={d.motivo}>
       <div className="grid">
@@ -289,14 +318,15 @@ function Duplicate({ d, empresas }: { d: Duplicado; empresas: Empresa[] }) {
         onClick={() =>
           cmd.ask(
             "Confirmar fusión",
-            `Se conservará ${a.razonSocial} y se eliminará la ficha duplicada. Revisa los valores seleccionados.`,
+            `Se conservará ${a.razonSocial}; la ficha duplicada quedará fusionada y sus contactos, oportunidades y evidencias pasarán a la principal. Revisa los valores seleccionados.`,
             `/duplicados/${d.id}/resolver`,
             choices,
           )
         }
       >
         Fusionar con los campos seleccionados
-      </Button>
+      </Button>{" "}
+      {descartar}
     </Card>
   );
 }

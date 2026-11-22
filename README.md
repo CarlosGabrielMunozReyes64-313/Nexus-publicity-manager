@@ -1,96 +1,104 @@
-# NEXUS · Publicity Manager
+# NEXUS · Publicity Manager (frontend)
 
-Frontend interno para NEXUS Innovación: contactos B2B, investigación simulada, propuestas revisadas por el administrador y seguimiento comercial. Interfaz en español de Colombia.
+Frontend interno para NEXUS Innovación: contactos B2B, investigación con evidencia, propuestas revisadas por el administrador y seguimiento comercial. Interfaz en español de Colombia.
 
-## Inicio rápido
+Funciona en dos modos, que la interfaz indica en la franja superior:
 
-Requisitos: **Node.js 22.12 o superior** (también Node 24) y npm. Necesitas conexión a Internet para instalar las dependencias una primera vez.
+| Modo             | `VITE_USE_MOCKS` | Qué ocurre                                                                                                                                                                       |
+| ---------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Demostración** | `true`           | Datos ficticios en memoria (MSW). No hay correos, llamadas a Google, Gmail ni IA.                                                                                                |
+| **API real**     | `false`          | Cada acción llega al backend: puede revocar permisos, pausar campañas, enviar correos o consumir presupuesto de IA. Las confirmaciones explican el efecto real antes de aceptar. |
+
+## Requisitos
+
+Node.js 22.12 o superior (también Node 24) y npm. La primera instalación necesita Internet.
+
+## Probar la demostración
+
+El ZIP no incluye `.env` ni `dist/` (se generan en su equipo). Desde esta carpeta:
 
 ```bash
 npm ci
+cp .env.example .env        # Windows: copy .env.example .env
 npm run dev
 ```
 
-Abre la dirección que muestra Vite (normalmente `http://localhost:5173`). Pulsa **Iniciar sesión con Google**: en modo demostración entra directamente, sin cuenta ni conexión a Google.
+`.env.example` ya trae `VITE_USE_MOCKS=true`. Abra la dirección que muestra Vite (normalmente `http://localhost:5173`) y pulse **Iniciar sesión con Google**: en la demostración entra directamente, sin cuenta.
 
-El archivo `.env` ya activa los mocks:
+El estado vive en memoria: recargar la página restaura los datos (también desde Configuración → Opciones de desarrollo). Si el sistema impide enumerar las interfaces de red, use `npm run dev -- --host 127.0.0.1`.
 
-```dotenv
-VITE_API_URL=http://localhost:8000/api
-VITE_USE_MOCKS=true
+## Usar el backend real en desarrollo
+
+1. Arranque el backend (carpeta `Nexus-publicity-manager-bakend-main`, ver su README) y, en su `.env`, defina `APP_URL=http://localhost:5173` para que el inicio de sesión y la protección de origen acepten a Vite.
+2. En el `.env` de esta carpeta ponga `VITE_USE_MOCKS=false` y deje `VITE_API_URL=/api`.
+3. Reinicie `npm run dev`. Vite reenvía `/api`, `/baja`, `/r` y `/health` al backend (`VITE_PROXY_DESTINO`, por defecto `http://localhost:8000`), así que navegador y API comparten origen y la cookie de sesión funciona sin CORS.
+
+Si antes usó la demostración en el mismo origen, elimine el service worker de MSW desde las herramientas del navegador (Aplicación → Service workers).
+
+## Compilar
+
+```bash
+VITE_USE_MOCKS=false npm run build      # PowerShell: $env:VITE_USE_MOCKS="false"; npm run build
 ```
 
-**El estado simulado vive en memoria. Recargar la página restaura los datos.** Navega con la barra lateral y los enlaces internos para conservar los cambios durante la sesión. También puedes reiniciar desde Configuración → Opciones de desarrollo.
+Genera `dist/` (TypeScript estricto + Vite). Las variables `VITE_*` se fijan en la compilación: cambie el `.env` y vuelva a compilar. `dist/` debe servirse por HTTP con todas las rutas desconocidas apuntando a `index.html`; no lo abra con `file://`.
 
-## Qué contiene este ZIP
+- **Docker (todo en un contenedor):** el `docker-compose.yml` del backend compila esta carpeta automáticamente.
+- **Backend sin Docker:** compile aquí y en el `.env` del backend defina `FRONTEND_DIST=../Nexus-publicity-manager-main/dist` (lo escribe `python scripts/entorno_desarrollo.py`).
+- `npm run preview` sirve la compilación localmente con el mismo proxy de desarrollo.
 
-- Código fuente de las 13 pantallas y fichas de detalle.
-- Cliente `fetch` con errores tipados, esquemas Zod y hooks de React Query.
-- MSW, su service worker y un contrato REST con mutaciones en memoria y auditoría.
-- 25 empresas, 60 contactos, 2 campañas, 8 respuestas, 5 oportunidades, 2 búsquedas, propuestas de los cuatro agentes, 50 acciones iniciales y 90 días de métricas.
-- `dist/`: versión compilada lista para servir por HTTP.
-- `package-lock.json`: instalación reproducible.
-- Pruebas unitarias y de interfaz, ejemplo CSV, decisiones y contrato de integración.
-- `ESPECIFICACION.md`: documento que dio origen a la implementación.
+## Desplegar en Vercel
 
-No se distribuye `node_modules`: npm lo reconstruye desde el archivo de bloqueo. No abras `dist/index.html` mediante `file://`; los módulos, las rutas y MSW necesitan un servidor HTTP.
+`vercel.ts` reemplaza al antiguo `vercel.json` y **no contiene ninguna dirección fija**. El destino del backend se define por entorno:
+
+1. Vercel → Settings → Environment Variables:
+   - `NEXUS_BACKEND_URL` = `https://su-backend-de-produccion…` solo para **Production**.
+   - `NEXUS_BACKEND_URL` = `https://su-backend-de-pruebas…` solo para **Preview**.
+   - No defina `VITE_USE_MOCKS=true` en producción ni cambie `VITE_API_URL` (debe quedar vacía o en `/api`).
+2. Despliegue. El comando `npm run build:vercel` comprueba la variable y que `NEXUS_BACKEND_URL/health` responda antes de compilar; si algo falta, el despliegue se detiene en lugar de apuntar a otro servidor. Solo si el backend aún no está publicado puede definir `NEXUS_OMITIR_VERIFICACION=1`.
+3. Tras desplegar, verifique las rutas: `npm run verificar:despliegue -- https://su-app.vercel.app` (salud, API, bajas, seguimiento y carga de la aplicación).
+
+En el backend de cada entorno, `APP_URL` debe ser el dominio público de Vercel de ese entorno (las mutaciones verifican el origen y Google redirige a esa dirección). Las respuestas de `/api`, `/baja`, `/r` y `/health` no se guardan en la caché de Vercel.
 
 ## Comandos
 
 ```bash
-npm run dev          # desarrollo
-npm run typecheck    # TypeScript estricto
-npm run test         # Vitest, 39 pruebas
-npm run lint         # ESLint
-npm run format:check # Prettier
-npm run format       # aplicar formato
-npm run build        # TypeScript + producción en dist/
-npm run preview      # servir la compilación
+npm run dev                   # desarrollo
+npm run typecheck             # TypeScript estricto
+npm test                      # Vitest
+npm run lint                  # ESLint
+npm run format:check          # Prettier
+npm run build                 # producción en dist/
+npm run preview               # servir la compilación
+npm run build:vercel          # verificación + compilación (Vercel)
+npm run verificar:despliegue -- https://su-app.vercel.app
 ```
 
-Si el sistema impide enumerar las interfaces de red, utiliza:
+`npm test` no necesita variables ni depende de su `.env`: la configuración de pruebas fija `VITE_API_URL=/api` y el modo de la API real, y cada prueba simula las respuestas del servidor.
 
-```bash
-npm run dev -- --host 127.0.0.1
-```
+## Recorrido para probar (demostración)
 
-## Recorrido para probar
-
-1. Entra al panel y revisa los indicadores, las tareas y el embudo.
-2. Contactos → Importar CSV → carga `ejemplos/contactos.csv`. Mapea nombre/correo, selecciona empresa, origen y base legal; previsualiza y confirma. Se omiten duplicados y filas inválidas.
-3. Abre un contacto: consulta sus evidencias, registra la prueba legal y apruébala. Importar nunca verifica un correo ni aprueba una base legal automáticamente.
-4. Empresas → Duplicados: compara las dos fichas, selecciona los campos y confirma la fusión.
-5. Descubrimiento → acepta Envases Guayacán: se crea una empresa y un contacto corporativo sin aprobación legal ni verificación de correo. El resultado que coincide con Samán está bloqueado por posible duplicado.
-6. Segmentos → abre Industria de Palmira, revisa las reglas, la muestra y su aprobación.
-7. Propuestas → abre la campaña RSE Express, revisa destinatarios, contenido, evidencias y versiones. Aprobar muestra una confirmación. Rechazar exige un motivo.
-8. Secuencias → edita y reordena los pasos; guarda para revisión. Las campañas asociadas se pausan y reciben una propuesta nueva o una versión adicional.
-9. Campañas → revisa las inscripciones. Reanudar no reactiva contactos que respondieron, pidieron baja, tuvieron una reunión o se convirtieron en clientes.
-10. Respuestas → revisa el borrador antes de confirmar su envío simulado. Cambiar una clasificación a baja suprime inmediatamente al contacto.
-11. Embudo → mueve una oportunidad a Cliente: la confirmación retira de las secuencias a todos los contactos de la empresa.
-12. Informes → filtra fechas y grupos; registra un costo para probar la cobertura de los indicadores.
-13. Configuración → prueba la desconexión simulada de Gmail y los límites. Auditoría → filtra y exporta el registro.
-
-Todos los datos, dominios `.example`, pruebas legales e integraciones son ficticios. No hay scraping, llamadas a Gmail/Google/Meta/Claude ni correos reales.
-
-## Cambiar a una API real
-
-Con un backend compatible con `API.md`, cambia **solo** `VITE_USE_MOCKS=false`. `VITE_API_URL` ya apunta al backend local; ajústala si tu backend está en otra dirección. Reinicia Vite o reconstruye `dist` después de cambiar variables.
-
-El frontend deja de iniciar MSW y usa los mismos endpoints y esquemas. La API debe implementar sesión y autorización reales, CORS para el origen del frontend, cookies seguras y las mismas validaciones de negocio en el servidor. No se incluye ese backend, conforme al alcance solicitado.
-
-Para servir `dist`, configura fallback de rutas a `index.html` y usa HTTPS o localhost para MSW. Si cambias a un despliegue sin mocks, elimina cualquier service worker de demostración anterior desde las herramientas del navegador.
+1. Panel: indicadores, tareas y embudo.
+2. Contactos → Importar CSV → `ejemplos/contactos.csv`. Mapee nombre/correo, elija empresa, origen y base legal, previsualice y confirme. Cambiar cualquiera de esas opciones obliga a previsualizar de nuevo; al terminar se muestra cuántas filas se crearon, omitieron y rechazaron.
+3. Abra un contacto: evidencias, prueba legal y aprobación. Importar nunca verifica un correo ni aprueba una base legal.
+4. Empresas → Duplicados: compare, fusione o marque «No es duplicado».
+5. Descubrimiento: acepte un resultado; el que coincide con una empresa existente queda bloqueado.
+6. Segmentos, Propuestas, Secuencias y Campañas: aprobar no envía; activar sí (en la API real).
+7. Respuestas: revise el borrador antes de enviar. Crear oportunidad la vincula con la respuesta y su campaña.
+8. Embudo: mover una oportunidad a Cliente retira a sus contactos de las secuencias.
+9. Informes: elija el periodo; el embudo de esa pestaña sigue las mismas fechas. Registre un costo con su fecha real.
+10. Configuración → Integraciones: cada botón explica qué ocurrirá. Auditoría: los filtros se aplican en el servidor y la exportación incluye todas las coincidencias.
 
 ## Estructura
 
-- `src/app`: rutas diferidas, sesión y layout.
-- `src/api`: transporte, esquemas y hooks por módulo.
-- `src/mocks`: ejemplos y handlers con estado transaccional en memoria.
-- `src/types`: modelo de dominio completo.
+- `src/app`: rutas diferidas, sesión (distingue sesión vencida de caída del servidor) y layout.
+- `src/api`: transporte, esquemas Zod y hooks.
+- `src/mocks`: datos y handlers en memoria del modo demostración.
+- `src/types`: modelo de dominio.
 - `src/components/ui`: componentes, tablas, diálogos y notificaciones.
-- `src/features`: módulos de la aplicación.
-- `src/lib`: reglas puras, CSV y formato Colombia.
-- `src/styles`: tokens y estilos comunes; CSS Modules en layout y componentes.
+- `src/features`: pantallas.
+- `src/lib`: reglas puras, CSV, fechas de Bogotá y modo activo.
+- `scripts`: verificación de despliegue y validación del contrato con respuestas reales.
+- `vercel.ts`: rutas de Vercel por entorno.
 
-Ver `DECISIONES.md` y `VALIDACION.md` para los detalles de implementación y verificación.
-# Nexus-publicity-manager
-# Nexus-publicity-manager
+Ver `DECISIONES.md` y `VALIDACION.md`.

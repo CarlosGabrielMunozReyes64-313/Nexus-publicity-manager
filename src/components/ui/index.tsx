@@ -291,9 +291,12 @@ export function DiffView({
 export function Table<T>({
   data,
   columns,
+  paginar = true,
 }: {
   data: T[];
   columns: ColumnDef<T>[];
+  /** false cuando la paginación la hace el servidor. */
+  paginar?: boolean;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
@@ -303,10 +306,39 @@ export function Table<T>({
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    ...(paginar ? { getPaginationRowModel: getPaginationRowModel() } : {}),
     initialState: { pagination: { pageSize: 10 } },
   });
   if (!data.length) return <EmptyState />;
+  if (!paginar)
+    return (
+      <div className="scroll">
+        <table>
+          <thead>
+            {table.getHeaderGroups().map((g) => (
+              <tr key={g.id}>
+                {g.headers.map((h) => (
+                  <th key={h.id}>
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((r) => (
+              <tr key={r.id}>
+                {r.getVisibleCells().map((c) => (
+                  <td key={c.id}>
+                    {flexRender(c.column.columnDef.cell, c.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
   return (
     <>
       <div className="scroll">
@@ -441,9 +473,14 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
               onClick={async () => {
                 setBusy(true);
                 try {
-                  await confirmation.run();
+                  const resultado = await confirmation.run();
                   setConfirmation(null);
-                  setMessage("Cambio guardado correctamente.");
+                  // Una acción puede devolver un texto con su resultado real.
+                  setMessage(
+                    typeof resultado === "string" && resultado
+                      ? resultado
+                      : "Cambio guardado correctamente.",
+                  );
                 } catch (e) {
                   setError(
                     e instanceof Error ? e.message : "No se pudo guardar",

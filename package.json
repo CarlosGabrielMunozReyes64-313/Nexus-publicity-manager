@@ -12,7 +12,9 @@
     "preview": "vite preview --host 0.0.0.0",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:vercel": "node scripts/verificar_backend.mjs && npm run build",
+    "verificar:despliegue": "node scripts/verificar_despliegue.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -47,5 +49,8 @@
     "workerDirectory": [
       "public"
     ]
+  },
+  "engines": {
+    "node": ">=22.12"
   }
 }

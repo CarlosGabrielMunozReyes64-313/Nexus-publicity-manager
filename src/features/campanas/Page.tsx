@@ -10,7 +10,8 @@ import {
   QueryState,
 } from "../../components/ui";
 import { Intro, Resource, useCommand } from "../shared";
-import { fecha } from "../../lib/formato";
+import { fechaHora } from "../../lib/formato";
+import { MODO_DEMO } from "../../lib/modo";
 import type { Campana } from "../../types";
 export default function Page() {
   const q = useResource("/campanas", S.campanaSchema.array());
@@ -43,6 +44,11 @@ export default function Page() {
                   <span>{c.metricas.respuestas} respuestas</span>
                   <span>{c.metricas.diagnosticos} diagnósticos</span>
                 </div>
+                {c.motivoPausa && (
+                  <p className="notice warning" role="status">
+                    {c.motivoPausa}
+                  </p>
+                )}
                 <progress
                   aria-label="Avance de pasos de campaña"
                   max={Math.max(c.metricas.inscritos * 3, 1)}
@@ -79,7 +85,27 @@ function Actions({ c }: { c: Campana }) {
         onClick={() =>
           cmd.ask(
             "Activar o reanudar campaña",
-            `${c.nombre}: máximo ${c.topeDiario} contactos diarios; solo inscripciones elegibles sin motivo de salida. Simulación sin envío real.`,
+            MODO_DEMO ? (
+              <p>
+                {c.nombre}: máximo {c.topeDiario} contactos nuevos al día; solo
+                inscripciones elegibles sin motivo de salida. Modo demostración:
+                no se envía ningún correo.
+              </p>
+            ) : (
+              <>
+                <p>
+                  <strong>
+                    Se enviarán correos reales por Gmail a partir de la próxima
+                    ventana de envío.
+                  </strong>
+                </p>
+                <p>
+                  {c.nombre}: máximo {c.topeDiario} contactos nuevos al día;
+                  solo inscripciones elegibles sin motivo de salida. Los
+                  seguimientos conservan su espera en días hábiles.
+                </p>
+              </>
+            ),
             `/campanas/${c.id}/reanudar`,
           )
         }
@@ -108,6 +134,11 @@ function Detail({ c }: { c: Campana }) {
       <Link to="/campanas">← Campañas</Link>
       <Card>
         <Badge>{c.estado}</Badge>
+        {c.motivoPausa && (
+          <p className="notice warning" role="status">
+            {c.motivoPausa}
+          </p>
+        )}
         <Actions c={c} />
         <p>
           <Link to={`/secuencias/${c.secuenciaId}/editar`}>
@@ -157,7 +188,7 @@ function Detail({ c }: { c: Campana }) {
                       header: "Próximo envío",
                       cell: (r) =>
                         r.row.original.proximoEnvio
-                          ? fecha(r.row.original.proximoEnvio)
+                          ? fechaHora(r.row.original.proximoEnvio)
                           : "Sin programación",
                     },
                   ]}

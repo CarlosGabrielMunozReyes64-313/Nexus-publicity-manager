@@ -29,7 +29,7 @@ function wrapper(children: ReactNode, path = "/") {
 beforeEach(() => {
   reset();
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) =>
-    route(new Request(String(input), init)),
+    route(new Request(new URL(String(input), location.href), init)),
   );
 });
 describe("Pantallas críticas", () => {

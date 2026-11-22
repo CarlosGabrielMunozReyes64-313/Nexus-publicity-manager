@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -22,7 +22,15 @@ import {
   FunnelChart,
 } from "../../components/ui";
 import { Intro, Select, Resource, useCommand } from "../shared";
-import { fecha, porcentaje } from "../../lib/formato";
+import {
+  claveDia,
+  diaBogota,
+  fecha,
+  porcentaje,
+  sumarDias,
+} from "../../lib/formato";
+import { MODO_DEMO } from "../../lib/modo";
+import type { MetricaDiaria as Metrica } from "../../types";
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -32,22 +40,78 @@ ChartJS.register(
   Tooltip,
   Legend,
 );
+interface Dia {
+  fecha: string;
+  enviados: number;
+  respuestas: number;
+  visitas: number;
+  leads: number;
+  clientes: number;
+  costo: number | null;
+}
+/** Suma todas las filas de una misma fecha (campañas y canales) y ordena por día. */
+export function agruparPorDia(filas: Metrica[]): Dia[] {
+  const dias = new Map<string, Dia>();
+  for (const d of filas) {
+    const clave = claveDia(d.fecha);
+    const x = dias.get(clave) ?? {
+      fecha: clave,
+      enviados: 0,
+      respuestas: 0,
+      visitas: 0,
+      leads: 0,
+      clientes: 0,
+      costo: null,
+    };
+    x.enviados += d.enviados;
+    x.respuestas += d.respuestas;
+    x.visitas += d.visitas;
+    x.leads += d.leads ?? 0;
+    x.clientes += d.clientes ?? 0;
+    if (d.costoUSD != null) x.costo = (x.costo ?? 0) + d.costoUSD;
+    dias.set(clave, x);
+  }
+  return [...dias.values()].sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
+/** Costo por lead y por cliente calculados por fecha, con cobertura en días únicos. */
+export function indicadoresDeCosto(dias: Dia[]) {
+  const conCosto = dias.filter((d) => d.costo !== null);
+  const costo = conCosto.reduce((n, d) => n + (d.costo ?? 0), 0);
+  const leads = conCosto.reduce((n, d) => n + d.leads, 0);
+  const clientes = conCosto.reduce((n, d) => n + d.clientes, 0);
+  return {
+    costo,
+    leads,
+    clientes,
+    costoPorLead: leads > 0 ? costo / leads : null,
+    costoAdquisicion: clientes > 0 ? costo / clientes : null,
+    diasConCosto: conCosto.length,
+    diasConActividad: dias.length,
+  };
+}
+const usd = (n: number | null) => (n == null ? "Sin datos" : n.toFixed(2));
 export default function Page() {
   const [tab, setTab] = useState("Correo");
   const [group, setGroup] = useState("campana");
-  const [desde, setDesde] = useState("");
-  const [hasta, setHasta] = useState("");
+  const hoy = diaBogota();
+  const [desde, setDesde] = useState(sumarDias(hoy, -30));
+  const [hasta, setHasta] = useState(hoy);
+  const rangoValido = !desde || !hasta || desde <= hasta;
+  const rango = `desde=${desde}&hasta=${hasta}`;
   const q = useResource(
-    `/informes/metricas?agrupacion=${group}&desde=${desde}&hasta=${hasta}`,
+    `/informes/metricas?agrupacion=${group}&${rango}`,
     S.metricaSchema.array(),
+    rangoValido,
   );
   const cams = useResource("/campanas", S.campanaSchema.array());
   const seg = useResource("/segmentos", S.segmentoSchema.array());
   const cmd = useCommand();
-  const data = q.data ?? [];
-  const sent = data.reduce((n, d) => n + d.enviados, 0);
-  const replies = data.reduce((n, d) => n + d.respuestas, 0);
-  const costos = data.filter((d) => d.costoUSD !== null);
+  const data = useMemo(() => q.data ?? [], [q.data]);
+  const dias = useMemo(() => agruparPorDia(data), [data]);
+  const costos = indicadoresDeCosto(dias);
+  const sent = dias.reduce((n, d) => n + d.enviados, 0);
+  const replies = dias.reduce((n, d) => n + d.respuestas, 0);
+  const [costoFecha, setCostoFecha] = useState(hoy);
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -69,7 +133,7 @@ export default function Page() {
             .reduce((n, d) => n + d.respuestas, 0),
         }))
       : group === "periodo"
-        ? data.map((d) => ({
+        ? dias.map((d) => ({
             grupo: fecha(d.fecha),
             enviados: d.enviados,
             respuestas: d.respuestas,
@@ -116,6 +180,7 @@ export default function Page() {
           <input
             type="date"
             value={desde}
+            max={hasta || undefined}
             onChange={(e) => setDesde(e.target.value)}
           />
         </label>
@@ -124,6 +189,7 @@ export default function Page() {
           <input
             type="date"
             value={hasta}
+            min={desde || undefined}
             onChange={(e) => setHasta(e.target.value)}
           />
         </label>
@@ -135,7 +201,16 @@ export default function Page() {
           options={["campana", "segmento", "fuente", "periodo"]}
         />
       </div>
-      <QueryState loading={q.isPending} error={q.error} retry={q.refetch}>
+      {!rangoValido && (
+        <p role="alert" className="notice danger">
+          La fecha «Desde» debe ser anterior o igual a «Hasta».
+        </p>
+      )}
+      <QueryState
+        loading={rangoValido && q.isPending}
+        error={q.error}
+        retry={q.refetch}
+      >
         <div className="grid three" style={{ marginBottom: 20 }}>
           <KpiTile
             label="Correos del periodo"
@@ -156,52 +231,76 @@ export default function Page() {
         </div>
         {tab === "Costos" ? (
           <Card title="Costos y adquisición">
-            {costos.length ? (
+            {costos.diasConCosto ? (
               <>
+                <p>Costo registrado: USD {usd(costos.costo)}</p>
                 <p>
-                  Costo registrado: USD{" "}
-                  {costos.reduce((n, d) => n + (d.costoUSD ?? 0), 0).toFixed(2)}
+                  Costo por lead (USD): {usd(costos.costoPorLead)}{" "}
+                  <small>({costos.leads} leads)</small>
                 </p>
                 <p>
-                  Costo por lead (USD):{" "}
-                  {costos.reduce((n, d) => n + (d.leads ?? 0), 0) > 0
-                    ? (
-                        costos.reduce((n, d) => n + (d.costoUSD ?? 0), 0) /
-                        costos.reduce((n, d) => n + (d.leads ?? 0), 0)
-                      ).toFixed(2)
-                    : "Sin datos"}
-                </p>
-                <p>
-                  Costo de adquisición (USD):{" "}
-                  {costos.reduce((n, d) => n + (d.clientes ?? 0), 0) > 0
-                    ? (
-                        costos.reduce((n, d) => n + (d.costoUSD ?? 0), 0) /
-                        costos.reduce((n, d) => n + (d.clientes ?? 0), 0)
-                      ).toFixed(2)
-                    : "Sin datos"}
+                  Costo de adquisición (USD): {usd(costos.costoAdquisicion)}{" "}
+                  <small>({costos.clientes} clientes)</small>
                 </p>
                 <p className="notice">
-                  Cobertura: {costos.length} de {data.length} días. Estos
-                  indicadores solo usan los días con costo registrado y su
-                  atribución simulada.
+                  Cobertura: {costos.diasConCosto} de {costos.diasConActividad}{" "}
+                  días con actividad tienen costo registrado. Los indicadores
+                  suman, para cada uno de esos días, el gasto y todos sus leads
+                  y clientes (de todas las campañas y canales).
                 </p>
               </>
             ) : (
-              <p className="notice warning">Faltan datos de costos</p>
+              <p className="notice warning">
+                Faltan datos de costos en el periodo
+              </p>
             )}
             <form
               className="toolbar"
               onSubmit={(e) => {
                 e.preventDefault();
                 const f = new FormData(e.currentTarget);
-                cmd.ask(
-                  "Registrar costo",
-                  "Se asociará al último día de métricas disponibles.",
-                  "/informes/costos",
-                  { costoUSD: Number(f.get("costo")) },
-                );
+                const monto = Number(f.get("costo"));
+                const concepto = String(f.get("concepto") ?? "").trim();
+                const dia = costoFecha;
+                const fuera = dia < desde || dia > hasta;
+                cmd.confirm({
+                  title: "Registrar costo",
+                  summary: (
+                    <>
+                      <p>
+                        Se registrará un gasto de USD {monto.toFixed(2)} con
+                        fecha <strong>{fecha(dia)}</strong>
+                        {concepto ? ` · ${concepto}` : ""}.
+                      </p>
+                      {fuera && (
+                        <p className="notice warning">
+                          Esa fecha está fuera del periodo filtrado; amplíe
+                          «Desde» y «Hasta» para verla en estos indicadores.
+                        </p>
+                      )}
+                    </>
+                  ),
+                  run: async () => {
+                    await cmd.run("/informes/costos", {
+                      costoUSD: monto,
+                      fecha: dia,
+                      concepto,
+                    });
+                    return `Gasto registrado para el ${fecha(dia)}.`;
+                  },
+                });
               }}
             >
+              <label>
+                Fecha del gasto
+                <input
+                  required
+                  type="date"
+                  max={hoy}
+                  value={costoFecha}
+                  onChange={(e) => setCostoFecha(e.target.value)}
+                />
+              </label>
               <label>
                 Costo (USD)
                 <input
@@ -212,7 +311,11 @@ export default function Page() {
                   name="costo"
                 />
               </label>
-              <Button type="submit">Registrar costos</Button>
+              <label>
+                Concepto (opcional)
+                <input name="concepto" maxLength={200} />
+              </label>
+              <Button type="submit">Registrar costo</Button>
             </form>
           </Card>
         ) : (
@@ -230,13 +333,13 @@ export default function Page() {
                 <Line
                   options={options}
                   data={{
-                    labels: data.map((d) => fecha(d.fecha)),
+                    labels: dias.map((d) => fecha(d.fecha)),
                     datasets:
                       tab === "Sitio web"
                         ? [
                             {
                               label: "Visitas",
-                              data: data.map((d) => d.visitas),
+                              data: dias.map((d) => d.visitas),
                               borderColor: "#025873",
                               backgroundColor: "#025873",
                               pointRadius: 0,
@@ -245,14 +348,14 @@ export default function Page() {
                         : [
                             {
                               label: "Envíos",
-                              data: data.map((d) => d.enviados),
+                              data: dias.map((d) => d.enviados),
                               borderColor: "#025873",
                               backgroundColor: "#025873",
                               pointRadius: 0,
                             },
                             {
                               label: "Respuestas",
-                              data: data.map((d) => d.respuestas),
+                              data: dias.map((d) => d.respuestas),
                               borderColor: "#16804e",
                               backgroundColor: "#16804e",
                               pointRadius: 0,
@@ -326,13 +429,28 @@ export default function Page() {
         )}
         <p className="notice">
           ⓘ Tasa de apertura: poco fiable; Apple Mail y Gmail alteran las
-          aperturas. Las series y canales son ejemplos simulados. Los filtros de
-          fecha se aplican a las series y a sus grupos; los grupos sin registros
-          se muestran como Sin datos.
+          aperturas.{" "}
+          {MODO_DEMO
+            ? "Las series y canales son ejemplos simulados."
+            : "Cada envío, respuesta, visita, formulario y cierre se cuenta en su propia fecha (hora de Bogotá)."}{" "}
+          Los filtros de fecha se aplican a las series y a sus grupos; los
+          grupos sin registros se muestran como Sin datos.
         </p>
-        {tab === "Embudo" && (
-          <Card title="Distribución actual del embudo">
-            <Resource path="/embudo" schema={S.embudoSchema}>
+        {tab === "Embudo" && rangoValido && (
+          <Card
+            title={
+              desde && hasta
+                ? `Embudo de contactos creados entre el ${fecha(desde)} y el ${fecha(hasta)}`
+                : "Embudo de todos los contactos"
+            }
+          >
+            <p className="muted">
+              <small>
+                Sigue el filtro «Desde / Hasta» por fecha de creación del
+                contacto; cada contacto aparece en su etapa actual.
+              </small>
+            </p>
+            <Resource path={`/embudo?${rango}`} schema={S.embudoSchema}>
               {(items) => <FunnelChart items={items} />}
             </Resource>
           </Card>

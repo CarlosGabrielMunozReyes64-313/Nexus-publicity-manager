@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { MODO_DEMO } from "../../lib/modo";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useResource } from "../../api/hooks";
@@ -13,6 +15,31 @@ import {
 } from "../../components/ui";
 import { Intro, Select, Resource, useCommand } from "../shared";
 import { puedeInscribir, coincide } from "../../lib/reglas";
+const pasoPropuesto = S.secuenciaSchema.shape.pasos.element.extend({
+  id: z.string().optional(),
+});
+/** Una versión de propuesta de campaña guarda la secuencia completa (con o sin ids). */
+const secuenciaPropuesta = S.secuenciaSchema.extend({
+  id: z.string().optional(),
+  pasos: z.array(pasoPropuesto),
+});
+type SecuenciaPropuesta = z.infer<typeof secuenciaPropuesta>;
+const huellaSecuencia = (s: SecuenciaPropuesta) =>
+  JSON.stringify({
+    nombre: s.nombre,
+    objetivo: s.objetivo,
+    llamadaAccion: s.llamadaAccion,
+    metricasExito: s.metricasExito,
+    ventanaEnvio: s.ventanaEnvio,
+    pasos: s.pasos.map((paso) => ({
+      orden: paso.orden,
+      asunto: paso.asunto,
+      cuerpo: paso.cuerpo,
+      esperaDiasHabiles: paso.esperaDiasHabiles,
+      mismoHilo: paso.mismoHilo,
+      variables: paso.variables,
+    })),
+  });
 export default function Page() {
   const q = useResource("/propuestas", S.propuestaSchema.array());
   const [estado, setEstado] = useState("");
@@ -139,50 +166,68 @@ function Detail({ p }: { p: PropuestaAgente }) {
               path={`/secuencias/${campaign.secuenciaId}`}
               schema={S.secuenciaSchema}
             >
-              {(s) => (
-                <>
-                  <h3>{campaign.nombre}</h3>
-                  <p>Objetivo: {s.objetivo}</p>
-                  <p>
-                    Segmento: {seg?.nombre} · {destinatarios} destinatarios
-                    elegibles
-                  </p>
-                  <p>{seg?.justificacion}</p>
-                  <p>Llamada a la acción: {s.llamadaAccion}</p>
-                  {s.pasos.map((p) => (
-                    <details key={p.id} open>
-                      <summary>
-                        Paso {p.orden} · espera {p.esperaDiasHabiles} días
-                        hábiles
-                      </summary>
-                      <h3>{p.asunto ?? "Continúa en el mismo hilo"}</h3>
-                      <pre>{p.cuerpo}</pre>
-                      <small>
-                        Variables:{" "}
-                        {p.variables
-                          .map(
-                            (v) =>
-                              `${v.nombre} → ${v.campoFuente}; respaldo: ${v.respaldo}`,
-                          )
-                          .join(" · ") ||
-                          "Nombre y empresa: solo evidencia verificada; si falta, texto genérico."}
-                      </small>
-                    </details>
-                  ))}
-                  <p>Métricas: {s.metricasExito.join(" · ")}</p>
-                  <p>
-                    Ventana: {s.ventanaEnvio.desde}–{s.ventanaEnvio.hasta} ·
-                    días {s.ventanaEnvio.dias.join(", ")} · America/Bogota
-                  </p>
-                  <p className="notice">
-                    Respuesta: pausa. Baja o rebote duro: supresión. Reunión o
-                    cliente: salida.
-                  </p>
-                  <Link to={`/secuencias/${s.id}/editar`}>
-                    Editar secuencia
-                  </Link>
-                </>
-              )}
+              {(actual) => {
+                // Se muestra lo que se aprobará: el contenido de la versión vigente
+                // de la propuesta, que puede diferir de la secuencia guardada.
+                const version = secuenciaPropuesta.safeParse(
+                  p.versiones.find((v) => v.version === p.version)?.contenido,
+                );
+                const s = version.success ? version.data : actual;
+                const cambia =
+                  version.success &&
+                  huellaSecuencia(version.data) !== huellaSecuencia(actual);
+                return (
+                  <>
+                    {cambia && (
+                      <p className="notice warning">
+                        Esta versión modifica la secuencia guardada. Abajo se
+                        muestra el contenido propuesto: al aprobar se aplicará
+                        tal cual.
+                      </p>
+                    )}
+                    <h3>{campaign.nombre}</h3>
+                    <p>Objetivo: {s.objetivo}</p>
+                    <p>
+                      Segmento: {seg?.nombre} · {destinatarios} destinatarios
+                      elegibles
+                    </p>
+                    <p>{seg?.justificacion}</p>
+                    <p>Llamada a la acción: {s.llamadaAccion}</p>
+                    {s.pasos.map((p) => (
+                      <details key={p.id ?? p.orden} open>
+                        <summary>
+                          Paso {p.orden} · espera {p.esperaDiasHabiles} días
+                          hábiles
+                        </summary>
+                        <h3>{p.asunto ?? "Continúa en el mismo hilo"}</h3>
+                        <pre>{p.cuerpo}</pre>
+                        <small>
+                          Variables:{" "}
+                          {p.variables
+                            .map(
+                              (v) =>
+                                `${v.nombre} → ${v.campoFuente}; respaldo: ${v.respaldo}`,
+                            )
+                            .join(" · ") ||
+                            "Nombre y empresa: solo evidencia verificada; si falta, texto genérico."}
+                        </small>
+                      </details>
+                    ))}
+                    <p>Métricas: {s.metricasExito.join(" · ")}</p>
+                    <p>
+                      Ventana: {s.ventanaEnvio.desde}–{s.ventanaEnvio.hasta} ·
+                      días {s.ventanaEnvio.dias.join(", ")} · America/Bogota
+                    </p>
+                    <p className="notice">
+                      Respuesta: pausa. Baja o rebote duro: supresión. Reunión o
+                      cliente: salida.
+                    </p>
+                    <Link to={`/secuencias/${actual.id}/editar`}>
+                      Editar secuencia
+                    </Link>
+                  </>
+                );
+              }}
             </Resource>
           )}
           <hr />
@@ -209,8 +254,10 @@ function Detail({ p }: { p: PropuestaAgente }) {
                       </p>
                       <p>
                         Primer envío estimado: próxima ventana hábil tras
-                        activar la campaña; no se programa al aprobar. No se
-                        enviarán correos reales en esta demostración.
+                        activar la campaña; no se programa al aprobar.{" "}
+                        {MODO_DEMO
+                          ? "No se enviarán correos reales en esta demostración."
+                          : "Aprobar no envía nada: los correos reales salen por Gmail solo después de activar la campaña."}
                       </p>
                       <p>{campaign?.nombre}</p>
                     </>

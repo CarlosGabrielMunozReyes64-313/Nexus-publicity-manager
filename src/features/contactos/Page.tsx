@@ -15,7 +15,7 @@ import {
 } from "../../components/ui";
 import { Intro, Select, Resource, useCommand } from "../shared";
 import { motivoInscripcion } from "../../lib/reglas";
-import { fecha } from "../../lib/formato";
+import { fechaHora } from "../../lib/formato";
 import ImportCSV from "./ImportCSV";
 export default function Page() {
   const navigate = useNavigate();
@@ -97,7 +97,9 @@ export default function Page() {
               </label>
               {Object.entries({
                 etapa: S.etapaSchema.options,
-                municipio: ["Palmira", "Candelaria", "Cali"],
+                municipio: [...new Set(empresas.map((e) => e.municipio))]
+                  .filter(Boolean)
+                  .sort(),
                 sector: [...new Set(empresas.map((e) => e.sector))],
                 baseLegal: ["aprobada", "pendiente"],
                 estadoCorreo: S.contactoSchema.shape.estadoCorreo.options,
@@ -371,9 +373,23 @@ function CreateContact({
     </Modal>
   );
 }
-function ContactDetail({ c, empresas }: { c: Contacto; empresas: Empresa[] }) {
+// La autorización de formulario solo llega desde el webhook firmado del sitio.
+const TIPOS_LEGALES =
+  S.contactoSchema.shape.baseLegal.shape.tipo.options.filter(
+    (t) => t !== "autorizacion_formulario",
+  );
+function ContactDetail({
+  c: resumen,
+  empresas,
+}: {
+  c: Contacto;
+  empresas: Empresa[];
+}) {
   const cmd = useCommand();
   const [legal, setLegal] = useState<BaseLegal | null>(null);
+  // El listado es liviano: la ficha pide al servidor las evidencias completas.
+  const detalle = useResource(`/contactos/${resumen.id}`, S.contactoSchema);
+  const c = detalle.data ?? resumen;
   return (
     <>
       <Link to="/contactos">← Todos los contactos</Link>
@@ -386,7 +402,13 @@ function ContactDetail({ c, empresas }: { c: Contacto; empresas: Empresa[] }) {
               </Link>{" "}
               · <Badge>{c.etapa}</Badge>
             </p>
-            <EvidenceList items={c.evidencias} />
+            {detalle.isPending ? (
+              <p className="muted">Cargando evidencias…</p>
+            ) : detalle.error ? (
+              <p role="alert">{detalle.error.message}</p>
+            ) : (
+              <EvidenceList items={c.evidencias} />
+            )}
             <p>
               {c.correo} · <Badge>{c.estadoCorreo}</Badge>
             </p>
@@ -419,7 +441,17 @@ function ContactDetail({ c, empresas }: { c: Contacto; empresas: Empresa[] }) {
             <p>{c.baseLegal.texto ?? "Texto sin registrar"}</p>
             <p>Prueba: {c.baseLegal.prueba ?? "Pendiente"}</p>
             <div className="row">
-              <Button onClick={() => setLegal({ ...c.baseLegal })}>
+              <Button
+                onClick={() =>
+                  setLegal({
+                    ...c.baseLegal,
+                    tipo:
+                      c.baseLegal.tipo === "autorizacion_formulario"
+                        ? "autorizacion_registrada"
+                        : c.baseLegal.tipo,
+                  })
+                }
+              >
                 Registrar evidencia legal
               </Button>
               <Button
@@ -457,7 +489,7 @@ function ContactDetail({ c, empresas }: { c: Contacto; empresas: Empresa[] }) {
                   {items.map((i) => (
                     <article key={i.id}>
                       <small>
-                        {fecha(i.fecha)} · {i.tipo}
+                        {fechaHora(i.fecha)} · {i.tipo}
                       </small>
                       <p>{i.resumen}</p>
                     </article>
@@ -531,8 +563,15 @@ function ContactDetail({ c, empresas }: { c: Contacto; empresas: Empresa[] }) {
               onChange={(v) =>
                 setLegal({ ...legal, tipo: v as BaseLegal["tipo"] })
               }
-              options={S.contactoSchema.shape.baseLegal.shape.tipo.options}
+              options={TIPOS_LEGALES}
             />
+            {c.baseLegal.tipo === "autorizacion_formulario" && (
+              <p className="notice">
+                La autorización actual llegó del formulario firmado del sitio.
+                Para aprobarla use «Aprobar base»; aquí solo puede registrar
+                otra prueba distinta.
+              </p>
+            )}
             <label>
               Texto de autorización
               <textarea

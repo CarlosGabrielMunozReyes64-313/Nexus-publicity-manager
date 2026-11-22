@@ -30,8 +30,9 @@ import {
 } from "lucide-react";
 import { useResource } from "../api/hooks";
 import * as S from "../api/schemas";
-import { API_URL } from "../api/client";
-import { Button, Skeleton, FeedbackProvider } from "../components/ui";
+import { API_URL, esSesionVencida } from "../api/client";
+import { Button, Card, Skeleton, FeedbackProvider } from "../components/ui";
+import { MODO_DEMO } from "../lib/modo";
 import styles from "./Layout.module.css";
 const pages = {
   panel: lazy(() => import("../features/panel/Page")),
@@ -86,9 +87,14 @@ const nav: {
     ],
   },
 ];
-const mock = import.meta.env.VITE_USE_MOCKS === "true";
+const mock = MODO_DEMO;
+const ERRORES_LOGIN: Record<string, string> = {
+  acceso_denegado:
+    "No se pudo iniciar sesión con esa cuenta. Use la cuenta de Google autorizada para administrar NEXUS.",
+};
 function Login() {
   const navigate = useNavigate();
+  const error = new URLSearchParams(useLocation().search).get("error");
   return (
     <div className={styles.login}>
       <div className={styles.loginBox}>
@@ -109,6 +115,12 @@ function Login() {
         >
           Iniciar sesión con Google
         </Button>
+        {error && (
+          <p role="alert" className="notice danger">
+            {ERRORES_LOGIN[error] ??
+              "No se pudo iniciar sesión. Intente de nuevo."}
+          </p>
+        )}
         <p>
           <small>
             {mock
@@ -289,6 +301,35 @@ function Layout() {
     </div>
   );
 }
+function SinConexion({
+  error,
+  retry,
+  busy,
+}: {
+  error: Error | null;
+  retry: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div className={styles.login}>
+      <div className={styles.loginBox}>
+        <Card title="No pudimos comprobar su sesión">
+          <p role="alert">
+            {error?.message ??
+              "El servidor no respondió. Su sesión puede seguir activa."}
+          </p>
+          <p className="muted">
+            Esto no significa que la sesión haya vencido: puede ser un problema
+            de red o del servidor. Reintente en unos momentos.
+          </p>
+          <Button variant="primary" onClick={retry} disabled={busy}>
+            {busy ? "Reintentando…" : "Reintentar"}
+          </Button>
+        </Card>
+      </div>
+    </div>
+  );
+}
 function Protected() {
   const session = useResource("/auth/session", S.okSchema, !mock);
   if (mock)
@@ -298,7 +339,16 @@ function Protected() {
       <Navigate to="/login" replace />
     );
   if (session.isPending) return <Skeleton />;
-  return session.data ? <Layout /> : <Navigate to="/login" replace />;
+  // Solo un error de autenticación lleva al inicio de sesión.
+  if (esSesionVencida(session.error)) return <Navigate to="/login" replace />;
+  if (session.data) return <Layout />;
+  return (
+    <SinConexion
+      error={session.error}
+      busy={session.isFetching}
+      retry={() => void session.refetch()}
+    />
+  );
 }
 export default function App() {
   return (

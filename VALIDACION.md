@@ -1,28 +1,28 @@
-# Validación de entrega
+# Validación de entrega — 21 de noviembre de 2026
 
-Entorno de comprobación: Node 24.22.1, npm 11.9.0. Versiones exactas de dependencias en package-lock.json.
+Entorno de comprobación: Node 22.23.5, npm 10.9.9, Chrome for Testing 153 con Playwright 1.65. Versiones exactas de dependencias en package-lock.json.
 
 ## Comprobaciones ejecutadas
 
 - `npm run typecheck`: TypeScript estricto, sin errores.
 - `npm run lint`: ESLint sin errores.
-- `npm run test`: 39 pruebas, 4 archivos, todas correctas.
-- `npm run build`: compilación de producción generada en `dist`.
+- `npm test`: 54 pruebas en 7 archivos, todas correctas (39 originales y 15 nuevas). También pasan con un `.env` local de demostración presente.
 - `npm run format:check`: formato verificado con Prettier.
+- `VITE_USE_MOCKS=false npm run build`: compilación de producción en `dist`.
+- Contrato: 33 respuestas reales del backend (guardadas por pytest) validadas con los esquemas Zod (`scripts/validar_contrato.ts`).
+- Navegador real: las 13 pantallas con la API real y un recorrido de las correcciones (sesión caída, importación CSV con cambio de empresa y resumen, integraciones, costo con fecha, embudo por periodo, auditoría filtrada y exportada, baja inválida).
+- Arranque desde los ZIP entregados con `scripts/probar_arranque.py` del backend: `npm ci`, `npm test` y `npm run build` sobre la copia extraída.
 
-## Cobertura
+## Cobertura nueva
 
-- Base legal, validez del correo, exclusiones y supresión por correo o dominio.
-- Revocación de aprobación y huella al editar.
-- Ausencia de datos frente a ceros reales y tasas sin denominador.
-- CSV con comillas, comas y saltos de línea; omisión de duplicados.
-- Fechas en Bogotá y moneda colombiana.
-- Flujos REST: aprobación, rechazo, edición versionada, importación, descubrimiento, inscripciones, baja y conversión a cliente.
-- Tres flujos de interfaz con Testing Library: aprobar propuesta, importar CSV y aceptar resultado. Verifican que no se mute antes de confirmar.
-- Dieciséis pruebas de renderizado de pantallas y fichas con respuestas validadas de la API simulada. Los gráficos se sustituyen en estas pruebas por un componente de prueba, de modo que no verifican píxeles de Chart.js.
+- Importación: invalidación de la vista previa al cambiar empresa, origen o base legal; limpieza por archivo; resumen de creadas, omitidas y rechazadas.
+- Fechas de calendario frente a instantes en Bogotá.
+- Informes agrupados por día y costo por lead con dos campañas el mismo día.
+- Auditoría con filtros en el servidor y exportación completa.
+- Sesión vencida frente a servidor caído, textos de integraciones en modo real, dirección del webhook y advertencia de envíos reales al activar.
+- Configuración de Vercel por entorno.
+- Versión propuesta en Propuestas y aprobación de segmentos solo con cambios guardados.
 
 ## Límite de la comprobación
 
-Se intentó abrir Chromium para una revisión visual, pero el entorno impidió crear los sockets del proceso del navegador (`Operation not permitted`). Por tanto, **no se afirma una revisión visual manual ni un recorrido E2E en navegador real**. Las pantallas sí se renderizaron en JSDOM mediante Testing Library, y la aplicación compiló con Vite.
-
-La autenticación e integraciones reales no se probaron porque pertenecen al backend futuro, fuera del alcance. La accesibilidad se implementó con controles nativos, foco y etiquetas; no se afirma una certificación WCAG independiente.
+No se probaron cuentas reales de Google, Gmail, Claude o Gemini, ni un despliegue real en Vercel. La accesibilidad se implementó con controles nativos, foco y etiquetas; no se afirma una certificación WCAG independiente.
