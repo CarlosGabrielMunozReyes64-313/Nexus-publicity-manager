@@ -9,17 +9,29 @@ import {
   EvidenceList,
   QueryState,
 } from "../../components/ui";
+import { MultiSelect } from "../../components/ui/MultiSelect";
 import { Intro, useCommand } from "../shared";
+import { MUNICIPIOS, SECTORES, TIPOS_EMPRESA, armarConsulta } from "./opciones";
+
 export default function Page() {
   const q = useResource("/descubrimiento/busquedas", S.busquedaSchema.array());
-  const [consulta, setConsulta] = useState("");
+  const [tipos, setTipos] = useState<string[]>([]);
+  const [municipios, setMunicipios] = useState<string[]>([
+    "Palmira",
+    "Candelaria",
+  ]);
+  const [sectores, setSectores] = useState<string[]>([]);
+  const [tamano, setTamano] = useState("");
   const cmd = useCommand();
+  const activa = q.data?.some(
+    (b) => b.estado === "ejecutando" || b.estado === "en_cola",
+  );
   useEffect(() => {
-    if (q.data?.some((b) => b.estado === "ejecutando")) {
+    if (activa) {
       const timer = setInterval(() => q.refetch(), 2500);
       return () => clearInterval(timer);
     }
-  }, [q.data]);
+  }, [activa]);
   return (
     <>
       <Intro
@@ -28,74 +40,112 @@ export default function Page() {
       />
       <p className="notice">
         Solo se consultan sitios web públicos de empresas y registros abiertos.
-        No se consultan redes sociales. En esta demostración no se realizan
-        búsquedas externas.
+        No se consultan redes sociales. Cada dato se comprueba en el sitio
+        oficial de la empresa antes de mostrarse.
       </p>
       <Card title="Nueva búsqueda">
         <form
           className="toolbar"
+          style={{ alignItems: "flex-start" }}
           onSubmit={async (e) => {
             e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            await cmd.save("/descubrimiento/busquedas", {
-              consulta,
-              municipios: String(f.get("municipios"))
-                .split(",")
-                .map((v) => v.trim())
-                .filter(Boolean),
-              sectores: String(f.get("sectores"))
-                .split(",")
-                .map((v) => v.trim())
-                .filter(Boolean),
-              tamano: String(f.get("tamano")),
+            if (!tipos.length) return;
+            const ok = await cmd.save("/descubrimiento/busquedas", {
+              consulta: armarConsulta(tipos),
+              municipios,
+              sectores,
+              tamano,
             });
+            if (ok) q.refetch();
           }}
         >
-          <label>
-            ¿Qué empresas buscas?
-            <input
-              required
-              minLength={3}
-              placeholder="Fabricantes de empaques en Palmira"
-              value={consulta}
-              onChange={(e) => setConsulta(e.target.value)}
-            />
-          </label>
-          <label>
-            Municipios
-            <input name="municipios" defaultValue="Palmira, Candelaria" />
-          </label>
-          <label>
-            Sectores
-            <input name="sectores" placeholder="Separados por coma" />
-          </label>
+          <MultiSelect
+            label="¿Qué empresas buscas?"
+            groups={TIPOS_EMPRESA}
+            value={tipos}
+            onChange={setTipos}
+            placeholder="Elige uno o más tipos"
+            allowAdd
+            storageKey="nexus.descubrimiento.tipos"
+          />
+          <MultiSelect
+            label="Municipios"
+            groups={MUNICIPIOS}
+            value={municipios}
+            onChange={setMunicipios}
+            placeholder="Cualquier municipio"
+          />
+          <MultiSelect
+            label="Sectores"
+            groups={SECTORES}
+            value={sectores}
+            onChange={setSectores}
+            placeholder="Cualquier sector"
+          />
           <label>
             Tamaño
-            <select name="tamano">
-              <option>11-50</option>
-              <option>51-200</option>
-              <option>1-10</option>
-              <option>200+</option>
+            <select
+              name="tamano"
+              value={tamano}
+              onChange={(e) => setTamano(e.target.value)}
+              style={{ minHeight: 41 }}
+            >
+              <option value="">Cualquiera</option>
+              <option value="1-10">1-10</option>
+              <option value="11-50">11-50</option>
+              <option value="51-200">51-200</option>
+              <option value="200+">200+</option>
             </select>
           </label>
-          <Button type="submit" variant="primary" disabled={cmd.pending}>
-            Iniciar búsqueda simulada
-          </Button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span aria-hidden style={{ visibility: "hidden" }}>
+              .
+            </span>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={cmd.pending || !tipos.length}
+            >
+              Iniciar búsqueda
+            </Button>
+          </div>
         </form>
+        {!tipos.length && (
+          <small>
+            Elige al menos un tipo de empresa, o usa «Agregar +» para escribir
+            el tuyo.
+          </small>
+        )}
       </Card>
       <div className="stack" style={{ marginTop: 20 }}>
         <QueryState loading={q.isPending} error={q.error} retry={q.refetch}>
           {q.data?.map((b) => (
             <Card key={b.id} title={b.criterios.consulta}>
               <p>
-                <Badge>{b.estado}</Badge> · {b.criterios.municipios.join(", ")}{" "}
-                · {b.progreso}%
+                <Badge>{b.estado}</Badge>
+                {b.criterios.municipios.length > 0 &&
+                  ` · ${b.criterios.municipios.join(", ")}`}
+                {b.criterios.sectores.length > 0 &&
+                  ` · ${b.criterios.sectores.join(", ")}`}
+                {` · ${b.progreso}%`}
+                {b.estado === "terminada" &&
+                  ` · ${b.resultados.length} resultado${b.resultados.length === 1 ? "" : "s"}`}
               </p>
-              <progress
-                aria-label={`Progreso ${b.criterios.consulta}`}
-                value={b.progreso}
-                max={100}
-              />
+              {b.estado !== "terminada" && (
+                <progress
+                  aria-label={`Progreso ${b.criterios.consulta}`}
+                  value={b.progreso}
+                  max={100}
+                />
+              )}
+              {b.error && (
+                <p
+                  className={`notice ${b.estado === "error" ? "danger" : "warning"}`}
+                  role={b.estado === "error" ? "alert" : undefined}
+                >
+                  {b.error}
+                </p>
+              )}
               <div className="grid" style={{ marginTop: 20 }}>
                 {b.resultados.map((r) => (
                   <Card key={r.id} title={r.empresa.razonSocial}>

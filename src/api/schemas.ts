@@ -275,6 +275,7 @@ export const busquedaSchema = z.object({
   }),
   estado: z.enum(["en_cola", "ejecutando", "terminada", "error"]),
   progreso: num,
+  error: str.optional(),
   resultados: z.array(resultadoSchema),
   creadaEn: str,
 });

@@ -297,6 +297,7 @@ export interface BusquedaDescubrimiento {
   };
   estado: "en_cola" | "ejecutando" | "terminada" | "error";
   progreso: number; // 0 a 100
+  error?: string; // motivo de fallo, reintento o búsqueda sin resultados
   resultados: ResultadoDescubrimiento[];
   creadaEn: string;
 }
