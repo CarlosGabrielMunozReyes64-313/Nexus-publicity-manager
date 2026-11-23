@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,7 +15,7 @@ export const OBJETIVOS = {
   otro: "Otro",
 } as const;
 
-export const formularioRutaSchema = z
+export const formularioIASchema = z
   .object({
     segmentoId: z.string().min(1, "Elija un segmento aprobado"),
     objetivo: z.enum(["rse", "llamada", "otro"]),
@@ -39,10 +39,10 @@ export const formularioRutaSchema = z
         message: "Describa el objetivo en 5 a 200 caracteres",
       });
   });
-type Formulario = z.input<typeof formularioRutaSchema>;
+type Formulario = z.input<typeof formularioIASchema>;
 
-/** Cuerpo de POST /propuestas/rutas-correo a partir del formulario. */
-export function cuerpoSolicitud(v: z.output<typeof formularioRutaSchema>) {
+/** Cuerpo de POST /secuencias/ia a partir del formulario. */
+export function cuerpoSolicitud(v: z.output<typeof formularioIASchema>) {
   const notas = (v.notas ?? "").trim();
   return {
     segmentoId: v.segmentoId,
@@ -55,8 +55,8 @@ export function cuerpoSolicitud(v: z.output<typeof formularioRutaSchema>) {
   };
 }
 
-/** Diálogo «Pedir una ruta de correos» (React Hook Form + Zod). */
-export default function PedirRuta({ onClose }: { onClose: () => void }) {
+/** Diálogo «Nueva con IA» (React Hook Form + Zod). */
+export default function NuevaConIA({ onClose }: { onClose: () => void }) {
   const segmentos = useResource(
     "/propuestas/rutas-correo/segmentos",
     S.segmentoRutaSchema.array(),
@@ -71,8 +71,8 @@ export default function PedirRuta({ onClose }: { onClose: () => void }) {
     getValues,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<Formulario, unknown, z.output<typeof formularioRutaSchema>>({
-    resolver: resolverZod(formularioRutaSchema),
+  } = useForm<Formulario, unknown, z.output<typeof formularioIASchema>>({
+    resolver: resolverZod(formularioIASchema),
     defaultValues: {
       segmentoId: "",
       objetivo: "rse",
@@ -81,7 +81,10 @@ export default function PedirRuta({ onClose }: { onClose: () => void }) {
       notas: "",
     },
   });
-  const conElegibles = (segmentos.data ?? []).filter((s) => s.elegibles > 0);
+  const conElegibles = useMemo(
+    () => (segmentos.data ?? []).filter((s) => s.elegibles > 0),
+    [segmentos.data],
+  );
   useEffect(() => {
     // Por defecto, el primer segmento aprobado que tenga contactos elegibles.
     if (!getValues("segmentoId") && conElegibles[0])
@@ -91,29 +94,25 @@ export default function PedirRuta({ onClose }: { onClose: () => void }) {
   const notas = watch("notas") ?? "";
   const enviar = handleSubmit(async (v) => {
     try {
-      await request(
-        "/propuestas/rutas-correo",
-        S.okSchema,
-        "POST",
-        cuerpoSolicitud(v),
-      );
+      await request("/secuencias/ia", S.okSchema, "POST", cuerpoSolicitud(v));
     } catch (e) {
       setError("root.servidor", {
         message: e instanceof Error ? e.message : "No se pudo enviar",
       });
       return;
     }
-    await cache.invalidateQueries({ queryKey: ["/propuestas/solicitudes"] });
+    await cache.invalidateQueries({ queryKey: ["/secuencias/solicitudes"] });
     onClose();
-    notify("El agente está preparando la ruta. Aparecerá aquí en unos minutos");
+    notify(
+      "La IA está escribiendo tu secuencia. Aparecerá aquí en unos minutos",
+    );
   });
   return (
-    <Modal title="Pedir una ruta de correos" onClose={onClose}>
+    <Modal title="Nueva secuencia con IA" onClose={onClose}>
       <form onSubmit={enviar} noValidate className="stack">
         <p className="muted">
-          El agente Estratega-redactor propone la ruta; usted la revisa, la
-          edita si quiere y decide. Pedirla consume presupuesto de IA y no envía
-          ningún correo.
+          La IA propone la secuencia completa; después tú la editas y la
+          apruebas. Pedirla consume presupuesto de IA y no envía ningún correo.
         </p>
         <label>
           Segmento
@@ -183,7 +182,7 @@ export default function PedirRuta({ onClose }: { onClose: () => void }) {
           <p className="danger">{errors.numeroCorreos.message}</p>
         )}
         <label>
-          Notas para el agente (opcional)
+          Notas para la IA (opcional)
           <textarea
             {...register("notas")}
             placeholder="Ejemplo: muchas de estas empresas venden a ingenios azucareros; mencione los cuestionarios de proveedores y evite hablar de certificaciones."
@@ -208,7 +207,7 @@ export default function PedirRuta({ onClose }: { onClose: () => void }) {
             variant="primary"
             disabled={isSubmitting || !conElegibles.length}
           >
-            {isSubmitting ? "Enviando…" : "Pedir la ruta"}
+            {isSubmitting ? "Enviando…" : "Pedir a la IA"}
           </Button>
         </footer>
       </form>

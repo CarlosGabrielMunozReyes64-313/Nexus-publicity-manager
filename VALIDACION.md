@@ -1,33 +1,58 @@
 # Validación de entrega — 22 de noviembre de 2026
 
-Entorno de comprobación: Node 22.23.5, npm 10.9.9, Chrome for Testing 153 con Playwright 1.65. Versiones exactas de dependencias en package-lock.json.
+Entorno de comprobación: Node 22.23.5, npm 10.9.9, Chrome for Testing 153 con Playwright. Versiones exactas de dependencias en package-lock.json.
 
 ## Comprobaciones ejecutadas
 
-- `npm run typecheck`: TypeScript estricto, sin errores.
-- `npm run lint`: ESLint sin errores.
-- `npm test`: 76 pruebas en 8 archivos, todas correctas. 19 nuevas de rutas de correo (`src/features/propuestas/rutas.test.tsx` y el escenario de 9 pasos en `src/mocks/flows.test.ts`); 4 pruebas anteriores de Propuestas y Segmentos se actualizaron al comportamiento nuevo (botón «Aprobar ruta», pedido de campaña que ahora funciona en demostración, panel de pedidos de segmentos).
-- `npm run format:check`: formato verificado con Prettier.
-- `VITE_USE_MOCKS=false npm run build`: compilación de producción en `dist`.
-- Contrato: 42 respuestas reales del backend (guardadas por pytest) validadas con los esquemas Zod (`scripts/validar_contrato.ts`), incluidas las rutas nuevas; las 54 versiones reales de rutas cumplen `rutaCorreoSchema`.
-- Escenario completo de rutas en modo demostración, en Chrome (Playwright): pedir una ruta de 3 correos, verla lista, previsualizarla con un contacto real, editar el correo 2, comparar la versión 1 con la 2, rechazar con comentario, recibir la versión 3 del agente, aprobar y comprobar que la campaña queda aprobada sin llamadas de inscripción, activación ni envío. Sin errores en la consola.
-- Celular (390 px): Propuestas y el detalle de una ruta se leen sin desplazamiento horizontal.
-- Navegador real: las 13 pantallas con la API real y un recorrido de las correcciones (sesión caída, importación CSV con cambio de empresa y resumen, integraciones, costo con fecha, embudo por periodo, auditoría filtrada y exportada, baja inválida).
-- Selector múltiple en Chrome: marcar una opción al final de la lista ya no desplaza la página.
-- Arranque desde los ZIP entregados con `scripts/probar_arranque.py` del backend: `npm ci`, `npm test` y `npm run build` sobre la copia extraída.
+- **`npm run typecheck`:** TypeScript estricto, sin errores.
+- **`npm run lint`:** ESLint sin errores.
+- **`npm run format:check`:** Prettier sin diferencias.
+- **`npm test`:** 94 pruebas en 10 archivos, todas correctas. Las nuevas:
+  - `src/features/secuencias/editor/editor.test.tsx` (21);
+  - `src/features/secuencias/lista.test.tsx` (10);
+  - `src/features/sin-propuestas.test.tsx` (5);
+  - el escenario de 9 pasos y la validación Zod de todas las respuestas nuevas en `src/mocks/flows.test.ts`.
+  - Las pruebas que dependían de Propuestas se actualizaron a la pantalla nueva.
+- **`VITE_USE_MOCKS=false npm run build`:** compilación de producción. El editor con formato (TipTap) va en un archivo aparte, de unos 133 kB comprimidos, que solo se descarga al usarlo.
+- **Contrato:** 68 respuestas reales del backend (guardadas por pytest) validadas con los esquemas Zod (`scripts/validar_contrato.ts`), 28 de ellas de las rutas del editor.
+- **Recorrido de 9 pasos en Chrome contra la API y la base reales** (solo la IA y Gmail simulados): pedir a la IA, abrir, editar el correo 2, vista previa con un contacto real, enviar una prueba, aprobar, activar la campaña, editar otra vez (se sigue enviando lo aprobado) y aprobar y reanudar. Además: «Mejorar con IA», texto con formato e historial. No hubo errores en la consola.
+- **Modo demostración en Chrome:** lista, editor, texto con formato (negrita, listas, variables, vista previa aislada) y «Mejorar con IA», sin errores en la consola.
+- **Celular (390 px):** la lista y el editor se leen sin desplazamiento horizontal.
+- **Navegador real:** las 13 pantallas con la API real; `/propuestas` lleva a `/secuencias`.
+- **Arranque desde los ZIP:** `scripts/probar_arranque.py` del backend ejecuta `npm ci`, `npm test` y `npm run build` sobre la copia extraída.
 
 ## Cobertura nueva
 
-- Importación: invalidación de la vista previa al cambiar empresa, origen o base legal; limpieza por archivo; resumen de creadas, omitidas y rechazadas.
-- Fechas de calendario frente a instantes en Bogotá.
-- Informes agrupados por día y costo por lead con dos campañas el mismo día.
-- Auditoría con filtros en el servidor y exportación completa.
-- Sesión vencida frente a servidor caído, textos de integraciones en modo real, dirección del webhook y advertencia de envíos reales al activar.
-- Configuración de Vercel por entorno.
-- Versión propuesta en Propuestas y aprobación de segmentos solo con cambios guardados.
-- Pedidos de propuestas a los agentes: botones, confirmación, motivo del rechazo y estado en Propuestas.
-- Rutas de correo: formulario con validación y envío, error del servidor en el diálogo, filtro por rutas, panel de solicitudes con reintento y consulta cada 15 s solo con solicitudes activas, línea de tiempo con notas y «Editado por el administrador», lista de verificación, vista previa con el primer contacto elegible, Aprobar deshabilitado con su motivo (igual que el servidor), diálogo de aprobación sin envíos, comparación palabra por palabra y restauración, rechazo con y sin versión nueva, editor compartido en la ruta y en Secuencias, contenido que no es una ruta mostrado tal cual y validación Zod de las respuestas nuevas.
+- **Sin Propuestas:**
+  - el menú no la tiene y las rutas antiguas redirigen;
+  - el contador «Secuencias por aprobar» y su tarjeta en el Panel;
+  - «Datos sugeridos por la IA» en Empresas, las mejoras en Informes y los pedidos en Segmentos.
+- **Lista:**
+  - estado, segmento, métricas, búsqueda, filtro y archivadas;
+  - solicitudes con consulta cada 15 s solo si hay alguna activa, y reintento;
+  - «Nueva con IA» con validación y errores del servidor;
+  - «Nueva en blanco», que abre el editor;
+  - duplicar y archivar.
+- **Editor:**
+  - agregar, duplicar, reordenar (también con botones) y eliminar correos;
+  - insertar variables;
+  - guardar con botón y con Ctrl+S, y que la versión sube sin aprobar nada;
+  - errores por correo y Aprobar bloqueado con su motivo;
+  - el aviso del borrador;
+  - la confirmación al salir y la copia local con «Recuperar»;
+  - la vista previa con un contacto real y los cambios sin guardar;
+  - la lista de verificación;
+  - el historial con comparación y restauración;
+  - los diálogos de aprobar (con y sin «Aprobar y reanudar») y de enviar prueba (incluido Gmail desconectado);
+  - pedir otra versión a la IA.
+- **Texto con formato:**
+  - variables como fichas y vuelta a `{{x}}`;
+  - lista blanca;
+  - texto simple derivado;
+  - `iframe` con `sandbox` vacío;
+  - lo que se guarda.
+- **Mejorar con IA:** se envía solo la instrucción y la secuencia en pantalla; la sugerencia se compara, se usa sin guardar o se descarta.
 
 ## Límite de la comprobación
 
-No se probaron cuentas reales de Google, Gmail, Claude o Gemini, ni un despliegue real en Vercel. La accesibilidad se implementó con controles nativos, foco y etiquetas; no se afirma una certificación WCAG independiente.
+No se probaron cuentas reales de Google, Gmail, Claude o Gemini, ni un despliegue real en Vercel. La accesibilidad se implementó con controles nativos, foco y etiquetas; no se afirma una certificación WCAG independiente. `npm audit --omit=dev` informa una alerta alta de zod 3 (memoria con colecciones enormes) que ya existía; corregirla exige pasar a zod 4.

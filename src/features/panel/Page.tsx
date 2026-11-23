@@ -1,6 +1,6 @@
 import { MODO_DEMO } from "../../lib/modo";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, Sparkles, Inbox, Copy, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Mail, Inbox, Copy, ShieldCheck } from "lucide-react";
 import { useResource } from "../../api/hooks";
 import * as S from "../../api/schemas";
 import {
@@ -14,7 +14,7 @@ import { Intro, Resource } from "../shared";
 import { fechaHora } from "../../lib/formato";
 export default function Page() {
   const q = useResource("/panel/resumen", S.resumenSchema);
-  const proposals = useResource("/propuestas", S.propuestaSchema.array());
+  const secuencias = useResource("/secuencias", S.secuenciaSchema.array());
   const dup = useResource("/duplicados", S.duplicadoSchema.array());
   return (
     <>
@@ -70,12 +70,15 @@ export default function Page() {
           <p className="muted">Tareas de hoy</p>
           {[
             {
-              icon: Sparkles,
-              title: "Propuestas para revisar",
-              count: proposals.data?.filter((p) => p.estado === "pendiente")
-                .length,
-              path: "/propuestas",
-              desc: "Los agentes prepararon nuevas ideas.",
+              icon: Mail,
+              title: "Secuencias por aprobar",
+              count: secuencias.data?.filter(
+                (s) =>
+                  s.estadoEditor === "borrador" ||
+                  s.estadoEditor === "cambios_sin_aprobar",
+              ).length,
+              path: "/secuencias",
+              desc: "Borradores y cambios que esperan tu aprobación.",
             },
             {
               icon: Inbox,

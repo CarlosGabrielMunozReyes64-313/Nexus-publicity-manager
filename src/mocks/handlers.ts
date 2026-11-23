@@ -8,64 +8,20 @@ import {
   coincide,
   huella,
   trasEditarCampana,
-  validarSecuencia,
+  ventanasCompatibles,
 } from "../lib/reglas";
-import {
-  avanzar,
-  conRuta,
-  elegiblesDe,
-  huellaRuta,
-  leerRuta,
-  notasEditadas,
-  nuevaSolicitud,
-  OBJETIVO_POR_DEFECTO,
-  publica,
-  renderMock,
-  revisionMock,
-  SIN_ELEGIBLES,
-  solicitudesIniciales,
-  validarPedido,
-  type SolicitudMock,
-} from "./rutas";
+import * as SQ from "./secuencias";
+import { ErrorDemo, type SolicitudMock } from "./secuencias";
 export let db = crearDatos();
 /** Pedidos a los agentes en el modo demostración (se resuelven al instante). */
 let pedidos: z.infer<typeof S.solicitudAgenteSchema>[] = [];
-/** Solicitudes de rutas de correo: el agente simulado tarda unos segundos. */
-let solicitudesRuta: SolicitudMock[] = solicitudesIniciales(db);
+/** Solicitudes a la IA de secuencias: el agente simulado tarda unos segundos. */
+let solicitudes: SolicitudMock[] = SQ.solicitudesIniciales(db);
 export const reset = () => {
   db = crearDatos();
   pedidos = [];
-  solicitudesRuta = solicitudesIniciales(db);
+  solicitudes = SQ.solicitudesIniciales(db);
 };
-/** Pide una ruta al agente simulado con las mismas validaciones que el backend. */
-function pedirRuta(body: unknown) {
-  const datos = validarPedido(body);
-  const seg = db.segmentos.find((s) => s.id === datos.segmentoId);
-  if (!seg) return fail("Registro no encontrado", 404);
-  if (seg.estado !== "aprobado")
-    return fail("El segmento requiere aprobación", 409);
-  if (!elegiblesDe(db, seg.id).length) return fail(SIN_ELEGIBLES, 409);
-  if (
-    solicitudesRuta.some(
-      (s) =>
-        s.tipo === "proponer_campana" &&
-        s.segmentoId === seg.id &&
-        (s.estado === "en_cola" || s.estado === "trabajando"),
-    )
-  )
-    return fail("Ya hay una ruta en preparación para este segmento", 409);
-  const s = nuevaSolicitud({
-    tipo: "proponer_campana",
-    segmentoId: seg.id,
-    segmento: seg.nombre,
-    objetivo: datos.objetivo,
-    numeroCorreos: datos.numeroCorreos,
-    ...(datos.notas ? { notas: datos.notas } : {}),
-  });
-  solicitudesRuta.unshift(s);
-  log("pedir_ruta_correo", "segmentos", seg.id, null, publica(s));
-  return HttpResponse.json({ ok: true, tareaId: s.id });
-}
 const uid = () => crypto.randomUUID();
 function fail(message: string, status = 400) {
   return HttpResponse.json({ message }, { status });
@@ -106,11 +62,11 @@ function suppress(c: T.Contacto, motivo: string) {
   stop(c, "baja");
 }
 /**
- * La campaña vuelve a revisión. Igual que revisar_pendientes del backend: una
- * propuesta pendiente solo recibe versión nueva si cambió la secuencia en uso
- * (la versión del administrador nunca se pisa con contenido más antiguo).
+ * La campaña perdió su aprobación (cambió la marca o el segmento). Igual que
+ * revisar_pendientes del backend: nunca se crean versiones desde la secuencia en uso;
+ * si la última versión ya estaba decidida, se crea una copia para aprobarla de nuevo.
  */
-function reviseCampaign(c: T.Campana, secuenciaCambio = false) {
+function reviseCampaign(c: T.Campana) {
   Object.assign(c, trasEditarCampana(c));
   db.inscripciones
     .filter((i) => i.campanaId === c.id && i.estado !== "finalizada")
@@ -118,44 +74,7 @@ function reviseCampaign(c: T.Campana, secuenciaCambio = false) {
       i.estado = "pausada";
       i.proximoEnvio = undefined;
     });
-  let p = db.propuestas.find(
-    (p) => p.tipo === "campana" && p.objetivoId === c.id,
-  );
-  const contenido = structuredClone(
-    db.secuencias.find((s) => s.id === c.secuenciaId),
-  );
-  if (!p) {
-    p = {
-      id: uid(),
-      objetivoId: c.id,
-      agente: "estratega_redactor",
-      tipo: "campana",
-      estado: "pendiente",
-      resumen: `Revisar campaña: ${c.nombre}`,
-      version: 1,
-      versiones: [{ version: 1, contenido, fecha: iso() }],
-      fuentes: [],
-      creadaEn: iso(),
-    };
-    db.propuestas.unshift(p);
-  } else {
-    const ultima = leerRuta(p.versiones.at(-1)?.contenido);
-    const viva = contenido ? leerRuta(contenido) : null;
-    if (p.estado !== "aprobada") {
-      if (!secuenciaCambio || !viva) return;
-      if (ultima && huellaRuta(ultima) === huellaRuta(viva)) return;
-    }
-    const notas = viva ? notasEditadas(ultima, viva) : undefined;
-    p.estado = "pendiente";
-    p.decision = undefined;
-    p.version++;
-    p.versiones.push({
-      version: p.version,
-      contenido: notas ? { ...contenido, notasAgente: notas } : contenido,
-      fecha: iso(),
-      autor: "admin",
-    });
-  }
+  SQ.trasRevocar(db, c);
 }
 function diaBogota(valor: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(valor)
@@ -183,16 +102,6 @@ function filtrarAuditoria(u: URL) {
     )
     .sort((a, b) => b.fecha.localeCompare(a.fecha));
 }
-function ventanasCompatibles(
-  a: T.Secuencia["ventanaEnvio"],
-  b: T.LimitesEnvio["ventana"],
-) {
-  return (
-    a.dias.some((d) => b.dias.includes(d)) &&
-    (a.desde > b.desde ? a.desde : b.desde) <
-      (a.hasta < b.hasta ? a.hasta : b.hasta)
-  );
-}
 function conflictosDeHorario(ventana: T.LimitesEnvio["ventana"]) {
   return db.campanas.filter((c) => {
     const s = db.secuencias.find((x) => x.id === c.secuenciaId);
@@ -213,6 +122,91 @@ function candidates(c: T.Campana) {
       coincide(p, db.empresas, seg?.reglas ?? []),
   );
 }
+/** Mutaciones del editor de secuencias (mismas rutas que el backend). */
+function mutarSecuencias(
+  method: string,
+  parts: string[],
+  body: unknown,
+): Response | null {
+  const [, id, action, n, sub] = parts;
+  const ok = (r: object, accion: string, entidadId: string) => {
+    log(accion, "secuencias", entidadId, null, null);
+    return HttpResponse.json(r);
+  };
+  if (method === "POST" && !id)
+    return ok(SQ.nueva(db, body), "crear_secuencia", "nueva");
+  if (method === "POST" && id === "ia")
+    return ok(SQ.pedirIA(db, solicitudes, body), "pedir_secuencia_ia", "ia");
+  if (method === "POST" && id === "solicitudes" && n === "reintentar")
+    return ok(
+      SQ.reintentar(db, solicitudes, action),
+      "reintentar_solicitud",
+      action,
+    );
+  if (!id) return null;
+  if (method === "PUT" && !action)
+    // Compatibilidad con el editor anterior: ahora guarda un borrador.
+    return ok(SQ.guardarBorrador(db, id, body), "guardar_borrador", id);
+  if (method === "PUT" && action === "borrador")
+    return ok(
+      SQ.guardarBorrador(db, id, (body as { secuencia?: unknown })?.secuencia),
+      "guardar_borrador",
+      id,
+    );
+  if (method === "DELETE" && action === "sugerencias" && n)
+    return HttpResponse.json(SQ.descartarSugerencia(solicitudes, id, n));
+  if (method !== "POST") return null;
+  if (action === "versiones" && sub === "restaurar")
+    return ok(SQ.restaurar(db, id, Number(n)), "restaurar_version", id);
+  if (action === "correos" && sub === "mejorar")
+    return ok(
+      SQ.mejorar(db, solicitudes, id, Number(n), body),
+      "pedir_mejora_correo",
+      id,
+    );
+  switch (action) {
+    case "previsualizar":
+      return HttpResponse.json(SQ.previsualizar(db, id, body));
+    case "aprobar":
+      return ok(SQ.aprobar(db, id), "aprobar_secuencia", id);
+    case "aprobar-y-reanudar": {
+      const cam = SQ.campanaDe(db, id);
+      if (cam?.estado !== "activa")
+        throw new ErrorDemo(
+          "Aprobar y reanudar solo aplica a una campaña activa",
+          409,
+        );
+      SQ.aprobar(db, id);
+      log("aprobar_secuencia", "secuencias", id, null, null);
+      // Si reanudar falla, la aprobación se conserva y se informa el motivo.
+      if (
+        db.integraciones.find((i) => i.id === "gmail")?.estado !== "conectada"
+      )
+        return fail("Gmail está desconectado");
+      cam.estado = "activa";
+      db.inscripciones
+        .filter((i) => i.campanaId === cam.id && !i.motivoSalida)
+        .forEach((i) => {
+          i.estado = "activa";
+          i.proximoEnvio = iso(-1);
+        });
+      return HttpResponse.json({ ok: true });
+    }
+    case "prueba":
+      return ok(SQ.prueba(db, id, body), "envio_prueba", id);
+    case "otra-version-ia":
+      return ok(
+        SQ.otraVersion(db, solicitudes, id, body),
+        "pedir_otra_version",
+        id,
+      );
+    case "duplicar":
+      return ok(SQ.duplicar(db, id), "duplicar_secuencia", id);
+    case "archivar":
+      return ok(SQ.archivar(db, id), "archivar_secuencia", id);
+  }
+  return null;
+}
 export async function route(request: Request): Promise<Response> {
   const u = new URL(request.url);
   const path = u.pathname.replace(/^.*\/api/, "");
@@ -221,7 +215,7 @@ export async function route(request: Request): Promise<Response> {
   const method = request.method;
   const body: unknown =
     method === "GET" ? undefined : await request.json().catch(() => ({}));
-  avanzar(db, solicitudesRuta);
+  SQ.avanzar(db, solicitudes);
   const before = structuredClone(db);
   const collections = {
     empresas: db.empresas,
@@ -239,15 +233,6 @@ export async function route(request: Request): Promise<Response> {
   };
   if (method === "GET") {
     if (path === "/agentes/solicitudes") return HttpResponse.json(pedidos);
-    if (path === "/propuestas/solicitudes")
-      return HttpResponse.json(
-        solicitudesRuta
-          .filter(
-            (s) => Date.now() - new Date(s.creadaEn).getTime() < 30 * 86400000,
-          )
-          .sort((a, b) => b.creadaEn.localeCompare(a.creadaEn))
-          .map(publica),
-      );
     if (path === "/propuestas/rutas-correo/segmentos")
       return HttpResponse.json(
         db.segmentos
@@ -257,32 +242,61 @@ export async function route(request: Request): Promise<Response> {
             id: s.id,
             nombre: s.nombre,
             version: s.version,
-            elegibles: elegiblesDe(db, s.id).length,
+            elegibles: SQ.elegiblesDe(db, s.id).length,
           })),
       );
+    if (resource === "secuencias") {
+      try {
+        if (!id)
+          return HttpResponse.json(
+            SQ.lista(db, u.searchParams.get("archivadas") === "true"),
+          );
+        if (id === "solicitudes")
+          return HttpResponse.json(
+            solicitudes
+              .filter(
+                (s) =>
+                  Date.now() - new Date(s.creadaEn).getTime() < 30 * 86400000,
+              )
+              .sort((a, b) => b.creadaEn.localeCompare(a.creadaEn))
+              .map(SQ.publica),
+          );
+        const seq = db.secuencias.find((x) => x.id === id);
+        if (!seq) return fail("Registro no encontrado", 404);
+        if (!action) return HttpResponse.json(SQ.conExtras(db, seq));
+        if (action === "borrador")
+          return HttpResponse.json(SQ.borrador(db, id));
+        if (action === "versiones")
+          return HttpResponse.json(SQ.versiones(db, id));
+        if (action === "revision")
+          return HttpResponse.json(SQ.revision(db, id));
+        if (action === "sugerencias")
+          return HttpResponse.json(SQ.sugerencias(solicitudes, id));
+        if (action === "elegibles")
+          return HttpResponse.json(
+            SQ.elegiblesDe(db, SQ.campanaDe(db, id)?.segmentoId)
+              .slice(0, 50)
+              .map((c) => ({
+                id: c.id,
+                nombre: c.nombre,
+                empresa:
+                  db.empresas.find((e) => e.id === c.empresaId)?.razonSocial ??
+                  "Sin empresa",
+              })),
+          );
+        return fail("Ruta no encontrada", 404);
+      } catch (e) {
+        return fail(
+          e instanceof Error ? e.message : "Datos no válidos",
+          e instanceof ErrorDemo ? e.status : 400,
+        );
+      }
+    }
     if (resource === "propuestas") {
       const p = db.propuestas.find((x) => x.id === id);
       if (id && !p) return fail("Registro no encontrado", 404);
-      if (p && action === "revision")
-        return HttpResponse.json(revisionMock(db, p));
-      if (p && action === "elegibles") {
-        if (p.tipo !== "campana")
-          return fail("Solo las rutas de correo tienen contactos elegibles");
-        const cam = db.campanas.find((c) => c.id === p.objetivoId);
-        return HttpResponse.json(
-          elegiblesDe(db, cam?.segmentoId)
-            .slice(0, 50)
-            .map((c) => ({
-              id: c.id,
-              nombre: c.nombre,
-              empresa:
-                db.empresas.find((e) => e.id === c.empresaId)?.razonSocial ??
-                "Sin empresa",
-            })),
-        );
-      }
-      if (p) return HttpResponse.json(conRuta(db, p));
-      return HttpResponse.json(db.propuestas.map((x) => conRuta(db, x)));
+      if (p) return HttpResponse.json(p);
+      return HttpResponse.json(db.propuestas);
     }
     if (path === "/panel/resumen")
       return HttpResponse.json({
@@ -445,37 +459,12 @@ export async function route(request: Request): Promise<Response> {
       return HttpResponse.json({ ok: true });
     }
     if (path === "/propuestas/rutas-correo" && method === "POST") {
-      const r = pedirRuta(body);
-      return r.status === 200 ? HttpResponse.json({ ok: true }) : r;
-    }
-    if (
-      resource === "propuestas" &&
-      id === "solicitudes" &&
-      parts[3] === "reintentar"
-    ) {
-      const s = solicitudesRuta.find((x) => x.id === action);
-      if (!s) return fail("Solicitud no encontrada", 404);
-      if (s.estado !== "fallida")
-        return fail("Solo se puede reintentar una solicitud fallida", 409);
-      if (s.tipo === "proponer_campana") {
-        const r = pedirRuta({
-          segmentoId: s.segmentoId,
-          objetivo: s.objetivo ?? OBJETIVO_POR_DEFECTO,
-          numeroCorreos: s.numeroCorreos ?? 3,
-          notas: s.notas,
-        });
-        return r.status === 200 ? HttpResponse.json({ ok: true }) : r;
-      }
-      solicitudesRuta.unshift(
-        nuevaSolicitud({
-          tipo: "revisar_campana",
-          segmentoId: s.segmentoId,
-          segmento: s.segmento,
-          propuestaId: s.propuestaId,
-        }),
-      );
-      log("reintentar_solicitud_ruta", "tareas", s.id, null, null);
+      SQ.pedirIA(db, solicitudes, body);
       return HttpResponse.json({ ok: true });
+    }
+    if (resource === "secuencias") {
+      const r = mutarSecuencias(method, parts, body);
+      if (r) return r;
     }
     if (resource === "contactos") {
       if (id === "importar") {
@@ -732,12 +721,14 @@ export async function route(request: Request): Promise<Response> {
         return HttpResponse.json({ ok: true, tareaId });
       }
       if (action === "proponer-campana")
-        // Ruta anterior: pide una ruta de 3 correos con el objetivo por defecto.
-        return pedirRuta({
-          segmentoId: id,
-          objetivo: OBJETIVO_POR_DEFECTO,
-          numeroCorreos: 3,
-        });
+        // Ruta anterior: pide una secuencia de 3 correos con el objetivo por defecto.
+        return HttpResponse.json(
+          SQ.pedirIA(db, solicitudes, {
+            segmentoId: id,
+            objetivo: SQ.OBJETIVO_POR_DEFECTO,
+            numeroCorreos: 3,
+          }),
+        );
       if (!id)
         db.segmentos.push({
           ...S.segmentoSchema.parse(body),
@@ -761,50 +752,9 @@ export async function route(request: Request): Promise<Response> {
       const p = db.propuestas.find((x) => x.id === id);
       if (!p) throw Error("Propuesta no encontrada");
       const actual = p.versiones.find((v) => v.version === p.version);
-      if (action === "previsualizar") {
-        if (p.tipo !== "campana")
-          throw Error("Solo las rutas de correo tienen vista previa");
-        const b = z
-          .object({
-            contactoId: z.string().min(1),
-            version: z.number().optional(),
-          })
-          .parse(body);
-        const v = p.versiones.find(
-          (x) => x.version === (b.version ?? p.version),
-        );
-        if (!v) return fail("Versión no encontrada", 404);
-        const ruta = leerRuta(v.contenido);
-        if (!ruta) throw Error("La versión no es una ruta de correos válida");
-        const c = db.contactos.find((x) => x.id === b.contactoId);
-        if (!c) return fail("Registro no encontrado", 404);
-        return HttpResponse.json(
-          renderMock(
-            db,
-            ruta.pasos.map((x, i) => ({ ...x, id: `paso-${i + 1}` })),
-            c,
-          ),
-        );
-      } else if (action === "restaurar") {
-        const { version } = z.object({ version: z.number().int() }).parse(body);
-        if (version === p.version)
-          throw Error("No se puede restaurar la versión actual");
-        const v = p.versiones.find((x) => x.version === version);
-        if (!v) return fail("Versión no encontrada", 404);
-        p.version++;
-        p.estado = "pendiente";
-        p.decision = undefined;
-        p.versiones.push({
-          version: p.version,
-          contenido: structuredClone(v.contenido),
-          fecha: iso(),
-          autor: "admin",
-        });
-        const c = db.campanas.find((c) => c.id === p.objetivoId);
-        if (c && p.tipo === "campana") Object.assign(c, trasEditarCampana(c));
-        log("restaurar", resource, p.id, null, { version });
-        return HttpResponse.json({ ok: true, version: p.version });
-      } else if (action === "rechazar") {
+      const seqDe = () =>
+        db.campanas.find((c) => c.id === p.objetivoId)?.secuenciaId;
+      if (action === "rechazar") {
         const b = z
           .object({
             comentario: z
@@ -816,94 +766,77 @@ export async function route(request: Request): Promise<Response> {
           .parse(body);
         if (actual?.decision)
           throw Error("Esta versión ya fue decidida; cree una versión nueva");
-        p.estado = "rechazada";
-        p.decision = { fecha: iso(), comentario: b.comentario };
-        if (actual)
-          Object.assign(actual, {
-            decision: "rechazada",
-            comentario: b.comentario,
-            decididaEn: iso(),
-          });
         if (
+          p.tipo === "campana" &&
           b.pedirNuevaVersion !== false &&
           p.agente === "estratega_redactor" &&
-          p.tipo === "campana"
+          seqDe()
         ) {
-          const cam = db.campanas.find((c) => c.id === p.objetivoId);
-          const seg = db.segmentos.find((s) => s.id === cam?.segmentoId);
-          solicitudesRuta.unshift(
-            nuevaSolicitud({
-              tipo: "revisar_campana",
-              propuestaId: p.id,
-              segmentoId: seg?.id,
-              segmento: seg?.nombre,
-            }),
-          );
+          SQ.otraVersion(db, solicitudes, seqDe()!, {
+            comentario: b.comentario,
+          });
+        } else {
+          p.estado = "rechazada";
+          p.decision = { fecha: iso(), comentario: b.comentario };
+          if (actual)
+            Object.assign(actual, {
+              decision: "rechazada",
+              comentario: b.comentario,
+              decididaEn: iso(),
+            });
         }
       } else if (action === "aprobar") {
-        if (p.estado === "aprobada") throw Error("Propuesta ya aprobada");
-        if (p.tipo === "correo_inferido")
-          throw Error(
-            "Un correo inferido requiere verificación; no se aprueba para envíos",
-          );
-        if (actual?.decision)
-          throw Error("Esta versión ya fue decidida; cree una versión nueva");
         if (p.tipo === "campana") {
-          // La misma lista de verificación que ve el administrador decide.
-          const rev = revisionMock(db, p);
-          if (!rev.puedeAprobar)
-            throw Error([...rev.bloqueos, ...rev.errores].join(". "));
-          const c = db.campanas.find((c) => c.id === p.objetivoId);
-          if (!c) throw Error("Campaña asociada no encontrada");
-          const s = db.secuencias.find((s) => s.id === c.secuenciaId)!;
-          const seg = db.segmentos.find((s) => s.id === c.segmentoId)!;
-          const ruta = leerRuta(actual?.contenido);
-          if (ruta) {
-            // Se aplica tal cual el contenido de la versión aprobada.
-            const { notasAgente, ...secuencia } = ruta;
-            void notasAgente;
-            Object.assign(s, {
-              ...secuencia,
-              id: s.id,
-              pasos: secuencia.pasos.map((x, i) => ({
-                ...x,
-                id: x.id && x.id !== "nuevo" ? x.id : `${s.id}-p${i + 1}`,
-              })),
-            });
+          // Igual que el backend: la ruta se aprueba desde su secuencia.
+          if (p.estado === "aprobada") throw Error("Propuesta ya aprobada");
+          SQ.aprobar(db, seqDe()!);
+        } else {
+          if (p.estado === "aprobada") throw Error("Propuesta ya aprobada");
+          if (p.tipo === "correo_inferido")
+            throw Error(
+              "Un correo inferido requiere verificación; no se aprueba para envíos",
+            );
+          if (actual?.decision)
+            throw Error("Esta versión ya fue decidida; cree una versión nueva");
+          p.estado = "aprobada";
+          p.decision = { fecha: iso() };
+          if (actual)
+            Object.assign(actual, { decision: "aprobada", decididaEn: iso() });
+          const x = (actual?.contenido ?? {}) as Record<string, unknown>;
+          if (p.tipo === "segmento") {
+            const seg = db.segmentos.find((s) => s.id === p.objetivoId);
+            if (seg) seg.estado = "aprobado";
           }
-          const errors = validarSecuencia(s, db.marca.prohibidas);
-          if (errors.length) throw Error(errors.join(". "));
-          c.estado = "aprobada";
-          c.versionAprobada = p.version;
-          c.huellaAprobada = huella(s, seg);
-        }
-        p.estado = "aprobada";
-        p.decision = { fecha: iso() };
-        if (actual)
-          Object.assign(actual, { decision: "aprobada", decididaEn: iso() });
-        if (p.tipo === "segmento") {
-          const seg = db.segmentos.find((s) => s.id === p.objetivoId);
-          if (seg) seg.estado = "aprobado";
-        }
-        if (p.tipo === "mejora" && p.objetivoId) {
-          const cam = db.campanas.find((c) => c.id === p.objetivoId);
-          if (cam) {
-            cam.topeDiario = 15;
-            reviseCampaign(cam);
+          if (p.tipo === "mejora") {
+            const cambios = (x.cambios ?? {}) as Record<string, unknown>;
+            if (x.objetivo === "secuencia" && typeof x.id === "string") {
+              // Una mejora para una secuencia crea un borrador; lo aprobado no cambia.
+              const b = SQ.borrador(db, x.id).contenido;
+              SQ.guardarBorrador(db, x.id, { ...b, ...cambios });
+            } else if (x.objetivo === "campana") {
+              const cam = db.campanas.find((c) => c.id === x.id);
+              if (cam && typeof cambios.topeDiario === "number") {
+                cam.topeDiario = cambios.topeDiario;
+                reviseCampaign(cam);
+              }
+            }
           }
-        }
-        if (p.tipo === "enriquecimiento") {
-          const e = db.empresas.find((e) => e.id === p.objetivoId);
-          if (e) {
-            e.tamano = "11-50";
-            e.evidencias.push({
-              campo: "tamano",
-              valor: "11-50",
-              fuente: "agente",
-              obtenidoEn: iso(),
-              estado: "inferido",
-              cita: p.resumen,
-            });
+          if (p.tipo === "enriquecimiento") {
+            const campos = (x.campos ?? {}) as Record<string, string>;
+            const e = db.empresas.find((e) => e.id === p.objetivoId);
+            if (e)
+              for (const [campo, valor] of Object.entries(campos)) {
+                (e as unknown as Record<string, unknown>)[campo] = valor;
+                e.evidencias.push({
+                  campo,
+                  valor,
+                  fuente: "agente",
+                  obtenidoEn: iso(),
+                  estado: "verificado",
+                  cita:
+                    p.fuentes.find((f) => f.campo === campo)?.cita ?? p.resumen,
+                });
+              }
           }
         }
       } else if (method === "PUT") {
@@ -917,62 +850,28 @@ export async function route(request: Request): Promise<Response> {
           throw Error("Indique el resumen o el contenido");
         if (b.resumen !== undefined && b.resumen.trim().length < 5)
           throw Error("El resumen requiere al menos 5 caracteres");
-        let contenido = structuredClone(actual?.contenido);
-        if (b.contenido !== undefined) {
-          if (p.tipo !== "campana")
-            throw Error("Solo las rutas de correo admiten editar el contenido");
-          const nueva = leerRuta(b.contenido);
-          if (!nueva) throw Error("La ruta no tiene el formato esperado");
-          const errores = validarSecuencia(
-            nueva as T.Secuencia,
-            db.marca.prohibidas,
-          );
-          if (errores.length) throw Error(errores.join(". "));
-          const { notasAgente, ...secuencia } = nueva;
-          void notasAgente;
-          const notas = notasEditadas(leerRuta(actual?.contenido), nueva);
-          contenido = notas ? { ...secuencia, notasAgente: notas } : secuencia;
-        }
         if (b.resumen !== undefined) p.resumen = b.resumen.trim();
+        if (p.tipo === "campana" && seqDe()) {
+          // Guardar crea un borrador; lo aprobado sigue vigente.
+          const r = SQ.guardarBorrador(
+            db,
+            seqDe()!,
+            b.contenido ?? SQ.borrador(db, seqDe()!).contenido,
+          );
+          log("PUT", resource, p.id, null, { version: r.version });
+          return HttpResponse.json(r);
+        }
         p.version++;
         p.estado = "pendiente";
-        p.decision = undefined;
         p.versiones.push({
           version: p.version,
-          contenido,
+          contenido: structuredClone(actual?.contenido),
           fecha: iso(),
           autor: "admin",
         });
-        if (p.tipo === "campana") {
-          const c = db.campanas.find((c) => c.id === p.objetivoId);
-          if (!c) throw Error("Campaña asociada no encontrada");
-          Object.assign(c, trasEditarCampana(c));
-          db.inscripciones
-            .filter((i) => i.campanaId === c.id)
-            .forEach((i) => {
-              i.estado = "pausada";
-              i.proximoEnvio = undefined;
-            });
-        }
         log("PUT", resource, p.id, null, { version: p.version });
         return HttpResponse.json({ ok: true, version: p.version });
-      }
-    } else if (resource === "secuencias") {
-      const s = db.secuencias.find((x) => x.id === id);
-      if (!s) throw Error("Secuencia no encontrada");
-      if (action === "previsualizar") {
-        const { contactoId } = z.object({ contactoId: z.string() }).parse(body);
-        const c = db.contactos.find((c) => c.id === contactoId);
-        if (!c) throw Error("Contacto no encontrado");
-        return HttpResponse.json(renderMock(db, s.pasos, c));
-      }
-      const next = S.secuenciaSchema.parse(body);
-      const errors = validarSecuencia(next, db.marca.prohibidas);
-      if (errors.length) throw Error(errors.join(". "));
-      Object.assign(s, next);
-      db.campanas
-        .filter((c) => c.secuenciaId === id)
-        .forEach((c) => reviseCampaign(c, true));
+      } else throw Error("Acción no válida");
     } else if (resource === "campanas") {
       const c = db.campanas.find((x) => x.id === id);
       if (!c) throw Error("Campaña no encontrada");
@@ -1229,7 +1128,10 @@ export async function route(request: Request): Promise<Response> {
     return HttpResponse.json({ ok: true });
   } catch (e) {
     db = before;
-    return fail(e instanceof Error ? e.message : "Datos no válidos");
+    return fail(
+      e instanceof Error ? e.message : "Datos no válidos",
+      e instanceof ErrorDemo ? e.status : 400,
+    );
   }
 }
 export const handlers = [

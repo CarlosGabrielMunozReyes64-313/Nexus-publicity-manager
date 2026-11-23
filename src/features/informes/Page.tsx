@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -467,6 +468,7 @@ export default function Page() {
         </Card>
       </QueryState>
       <h2 style={{ marginTop: 24 }}>Recomendaciones semanales del Analista</h2>
+      <MejorasSugeridas />
       <Resource
         path="/informes/recomendaciones"
         schema={S.recomendacionSchema.array()}
@@ -509,5 +511,88 @@ export default function Page() {
         )}
       </Resource>
     </>
+  );
+}
+
+const OBJETIVO_MEJORA: Record<string, string> = {
+  secuencia: "Secuencia",
+  campana: "Campaña",
+  segmento: "Segmento",
+};
+
+/** Mejoras propuestas por la IA (antes en Propuestas): aplicar o descartar. */
+function MejorasSugeridas() {
+  const cmd = useCommand();
+  const q = useResource("/propuestas", S.propuestaSchema.array());
+  const mejoras = (q.data ?? []).filter(
+    (p) => p.tipo === "mejora" && p.estado === "pendiente",
+  );
+  if (!mejoras.length) return null;
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <Card title="Mejoras sugeridas por la IA">
+        <ul className="list">
+          {mejoras.map((p) => {
+            const v = p.versiones.find((x) => x.version === p.version);
+            const x = (v?.contenido ?? {}) as {
+              objetivo?: string;
+              id?: string;
+              cambios?: Record<string, unknown>;
+            };
+            const esSecuencia = x.objetivo === "secuencia";
+            return (
+              <li key={p.id}>
+                <strong>{p.resumen}</strong>
+                {x.objetivo && (
+                  <p className="muted">
+                    {OBJETIVO_MEJORA[x.objetivo] ?? x.objetivo}
+                    {x.cambios
+                      ? " · " +
+                        Object.entries(x.cambios)
+                          .map(([k, val]) => `${k}: ${String(val)}`)
+                          .join(", ")
+                      : ""}
+                  </p>
+                )}
+                <div className="row">
+                  <Button
+                    variant="primary"
+                    onClick={() =>
+                      cmd.ask(
+                        "Aplicar mejora",
+                        esSecuencia
+                          ? "Se creará un borrador en la secuencia con este cambio. Lo aprobado no cambia hasta que apruebes el borrador."
+                          : "Se aplicará el cambio. Si afecta una campaña aprobada, vuelve a revisión.",
+                        `/propuestas/${p.id}/aprobar`,
+                      )
+                    }
+                  >
+                    Aplicar
+                  </Button>
+                  {esSecuencia && x.id && (
+                    <Link to={`/secuencias/${x.id}`}>Ver secuencia</Link>
+                  )}
+                  <Button
+                    onClick={() =>
+                      cmd.ask(
+                        "Descartar mejora",
+                        "La mejora no se aplica y queda registrada como descartada.",
+                        `/propuestas/${p.id}/rechazar`,
+                        {
+                          comentario: "Descartado por el administrador",
+                          pedirNuevaVersion: false,
+                        },
+                      )
+                    }
+                  >
+                    Descartar
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
+    </div>
   );
 }

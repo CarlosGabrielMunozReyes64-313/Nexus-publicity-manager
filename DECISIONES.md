@@ -44,3 +44,42 @@ Estas decisiones actualizan las anteriores donde se contradicen (en particular 1
 37. **Editor compartido.** El editor de Secuencias pasó a `src/features/secuencias/EditorSecuencia.tsx` (props `inicial`, `alGuardar`, `vistaPrevia`, `contactos`, `aviso`). Secuencias se comporta igual; en la ruta, guardar hace `PUT /propuestas/:id` con `{contenido}` y muestra «Se creó la versión N. La campaña queda en revisión hasta que la apruebes». Los errores de `validarSecuencia` aparecen mientras se escribe y los del servidor, dentro del editor.
 38. **Modo demostración.** Las rutas nuevas viven en `src/mocks/rutas.ts` con las mismas reglas que el backend, incluida la corrección de `revisar_pendientes` (la versión del administrador no se pisa con contenido más antiguo). El agente simulado tarda unos segundos (`demoRutas.esperaMs`; las pruebas lo ponen en 0). Los datos traen una solicitud fallida y la ruta de ejemplo con dos versiones; para que esa ruta se pueda aprobar, su campaña usa un segmento aprobado nuevo («Proveedores de ingenios · Palmira») y su propia secuencia.
 39. **Segmentos.** «Pedir campaña al agente» se conserva y ahora pide una ruta de 3 correos con el objetivo por defecto; para elegir otro objetivo se usa Propuestas.
+40. **Secuencias de correo en lugar de Propuestas (22 de noviembre de 2026).**
+    - Se quitaron la pantalla Propuestas, su entrada del menú, el contador y su carpeta.
+    - `/propuestas` lleva a `/secuencias`, y `/propuestas/:id` a la secuencia de esa campaña; si es otra propuesta, a su pantalla de origen.
+    - Las propuestas que no son de secuencias aparecen donde se usan:
+      - el enriquecimiento y el correo inferido, en la ficha de la empresa («Datos sugeridos por la IA»);
+      - las mejoras, en Informes (si son de una secuencia, crean un borrador);
+      - las de segmento se marcan aprobadas al aprobar el segmento.
+    - El menú muestra «Secuencias de correo» con el número de secuencias por aprobar, y el Panel tiene la tarjeta «Secuencias por aprobar».
+41. **Lista al estilo de Listmonk.**
+    - Tabla con nombre, segmento, correos, estado y métricas.
+    - Búsqueda, filtro por estado y «Ver archivadas».
+    - Diálogos «Nueva con IA» (React Hook Form + Zod) y «Nueva en blanco».
+    - Panel «Solicitudes a la IA», que consulta cada 15 s solo mientras alguna avanza, y estado vacío.
+42. **Editor `/secuencias/:id`.**
+    - Barra superior: nombre editable, estado, segmento, «Borrador vN · aprobada vM», Guardar (también con Ctrl/Cmd+S), Enviar prueba y Aprobar o Aprobar cambios, desactivado con el motivo que da el servidor (o «Guarda los cambios antes de aprobar»). El menú tiene Duplicar, Archivar, Pedir otra versión a la IA y Ver campaña.
+    - Pestaña Correos, en 3 columnas:
+      - lista de correos con arrastre (dnd-kit), botones subir/bajar accesibles por teclado e íconos de error o advertencia;
+      - editor del correo;
+      - vista previa en vivo con un contacto real, medio segundo después de dejar de escribir, en escritorio o celular.
+      - Debajo va la lista de verificación.
+    - Otras pestañas: Configuración, Vista previa (el hilo con fechas estimadas) e Historial (comparación palabra por palabra y «Restaurar como borrador»).
+    - `/secuencias/:id/editar` sigue funcionando.
+43. **No perder cambios.**
+    - `BrowserRouter` no tiene `useBlocker`. Por eso los enlaces de la aplicación se interceptan en fase de captura y piden confirmar, y `beforeunload` cubre cerrar o recargar.
+    - El botón «atrás» del navegador no se puede frenar con este router. Para ese caso, mientras haya cambios sin guardar se guarda una copia local (`nexus-borrador-<id>`), que se ofrece con «Recuperar» si es más nueva que el borrador del servidor.
+    - Si otra versión llega del servidor (la IA, restaurar) y no hay cambios locales, se carga; si los hay, se avisa.
+44. **Aviso de borrador.** Con una versión aprobada, al editar aparece «Lo que estás editando es un borrador. Se sigue enviando la versión aprobada hasta que apruebes los cambios». Si todo está aprobado, el motivo de no poder aprobar se muestra como texto neutro, no como error.
+45. **Texto con formato.**
+    - Editor TipTap (StarterKit sin títulos, citas ni código; Link solo con `https://` o `{{enlace}}`). Las variables son fichas que no se pueden romper y vuelven a ser `{{x}}` al guardar.
+    - La barra de herramientas no le quita el foco al texto.
+    - «Ver versión en texto simple».
+    - TipTap se carga aparte, solo al usar formato (unos 133 kB comprimidos).
+    - La vista previa usa `iframe` con `sandbox=""` y `srcdoc`; el HTML del usuario nunca entra en la página.
+46. **Mejorar con IA.**
+    - Por correo, con instrucciones rápidas.
+    - Envía lo que hay en pantalla (sin guardar) y la instrucción.
+    - La sugerencia se compara palabra por palabra con el texto actual. «Usar sugerencia» la aplica al borrador sin guardar (en formato, como párrafos), y también se puede descartar o reintentar.
+    - Consulta cada 5 s solo mientras la IA escribe.
+47. **Modo demostración.** `src/mocks/secuencias.ts` reemplaza a `src/mocks/rutas.ts` con las mismas reglas que el backend. Trae una secuencia escrita por la IA, una editada por el administrador con 2 versiones, una solicitud en curso y una fallida.

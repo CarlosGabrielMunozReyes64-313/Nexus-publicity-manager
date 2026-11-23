@@ -33,8 +33,8 @@ it.each([
   ["/empresas/e1", Empresas, "Empaques Samán S.A.S."],
   ["/segmentos", Segmentos, "Segmentos"],
   ["/segmentos/seg1", Segmentos, "Segmentos"],
-  ["/secuencias", Secuencias, "Secuencias"],
-  ["/secuencias/s1/editar", Secuencias, "Secuencias"],
+  ["/secuencias", Secuencias, "Secuencias de correo"],
+  ["/secuencias/s1", Secuencias, "Secuencias de correo"],
   ["/campanas", Campanas, "Campañas"],
   [
     "/campanas/cam1",

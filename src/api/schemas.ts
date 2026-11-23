@@ -115,26 +115,46 @@ export const segmentoSchema = z.object({
   estado: z.enum(["propuesto", "aprobado", "archivado"]),
   propuestoPor: z.enum(["admin", "agente"]),
 });
+export const estadosEditor = [
+  "borrador",
+  "cambios_sin_aprobar",
+  "aprobada",
+  "activa",
+  "pausada",
+  "finalizada",
+  "archivada",
+] as const;
+export const pasoSchema = z.object({
+  id,
+  orden: num,
+  asunto: str.optional(),
+  /** En formato «html», `cuerpo` es la versión en texto simple. */
+  cuerpo: str,
+  esperaDiasHabiles: num,
+  mismoHilo: z.boolean(),
+  variables: z.array(
+    z.object({ nombre: str, campoFuente: str, respaldo: str }),
+  ),
+  formato: z.enum(["texto", "html"]).optional(),
+  cuerpoHtml: str.optional(),
+});
 export const secuenciaSchema = z.object({
   id,
   nombre: str,
   objetivo: str,
   llamadaAccion: str,
-  pasos: z.array(
-    z.object({
-      id,
-      orden: num,
-      asunto: str.optional(),
-      cuerpo: str,
-      esperaDiasHabiles: num,
-      mismoHilo: z.boolean(),
-      variables: z.array(
-        z.object({ nombre: str, campoFuente: str, respaldo: str }),
-      ),
-    }),
-  ),
+  pasos: z.array(pasoSchema),
   metricasExito: z.array(str),
   ventanaEnvio: z.object({ dias: z.array(num), desde: str, hasta: str }),
+  // Campos del editor (aditivos): campaña, estado, borrador y aprobación.
+  campanaId: str.optional(),
+  campanaEstado: str.optional(),
+  segmentoId: str.optional(),
+  estadoEditor: z.enum(estadosEditor).optional(),
+  versionBorrador: num.optional(),
+  versionAprobada: num.optional(),
+  actualizadaEn: str.optional(),
+  archivada: z.boolean().optional(),
 });
 export const campanaSchema = z.object({
   id,
@@ -516,13 +536,95 @@ export const contactoElegibleSchema = z.object({
 });
 /** POST /propuestas/:id/previsualizar (y /secuencias/:id/previsualizar). */
 export const vistaPreviaSchema = z.object({
-  pasos: z.array(
-    secuenciaSchema.shape.pasos.element.extend({ id: str.optional() }),
-  ),
+  pasos: z.array(pasoSchema.extend({ id: str.optional() })),
   respaldo: z.array(str),
 });
 /** Respuesta de PUT /propuestas/:id y POST /propuestas/:id/restaurar. */
 export const versionCreadaSchema = z.object({
   ok: z.literal(true),
   version: num.optional(),
+});
+
+// ---------------------------------------------------------------- Editor de secuencias
+/** Contenido de un borrador o versión: la secuencia (ids opcionales) y las notas de la IA. */
+export const contenidoSecuenciaSchema = secuenciaSchema
+  .pick({
+    nombre: true,
+    objetivo: true,
+    llamadaAccion: true,
+    metricasExito: true,
+    ventanaEnvio: true,
+  })
+  .extend({
+    id: str.optional(),
+    pasos: z.array(pasoSchema.extend({ id: str.optional() })),
+    notasAgente: notasAgenteSchema.optional(),
+  });
+/** GET /secuencias/:id/borrador. */
+export const borradorSchema = z.object({
+  version: num,
+  autor: z.enum(["agente", "admin"]),
+  fecha: str,
+  contenido: contenidoSecuenciaSchema,
+});
+/** GET /secuencias/:id/versiones (el contenido se lee con contenidoSecuenciaSchema). */
+export const versionSecuenciaSchema = z.object({
+  version: num,
+  autor: z.enum(["agente", "admin"]),
+  fecha: str,
+  decision: z.enum(["aprobada", "rechazada"]).optional(),
+  comentario: str.optional(),
+  contenido: z.unknown(),
+});
+/** GET /secuencias/:id/revision: la misma lógica que usa aprobar. */
+export const revisionSecuenciaSchema = z.object({
+  puedeAprobar: z.boolean(),
+  bloqueos: z.array(str),
+  errores: z.array(str),
+  advertencias: z.array(str),
+  elegibles: num,
+  gmailConectado: z.boolean(),
+  duracionDiasHabiles: num,
+  hayCambiosSinAprobar: z.boolean(),
+  segmento: z.object({ id, nombre: str, estado: str, version: num }).optional(),
+  ventanaValida: z.boolean().optional(),
+  topeDiario: num.optional(),
+  campanaEstado: str.optional(),
+});
+/** GET /secuencias/solicitudes: pedidos a la IA de los últimos 30 días. */
+export const solicitudSecuenciaSchema = z.object({
+  id,
+  tipo: z.enum(["proponer_campana", "revisar_campana", "reescribir_correo"]),
+  estado: z.enum(["en_cola", "trabajando", "lista", "fallida"]),
+  segmentoId: str.optional(),
+  segmento: str.optional(),
+  secuenciaId: str.optional(),
+  objetivo: str.optional(),
+  numeroCorreos: num.optional(),
+  creadaEn: str,
+  terminadaEn: str.optional(),
+  error: str.optional(),
+});
+export const creadaSchema = z.object({ ok: z.literal(true), id });
+export const guardadoSchema = z.object({
+  ok: z.literal(true),
+  version: num.optional(),
+});
+export const pruebaEnviadaSchema = z.object({
+  ok: z.literal(true),
+  destinatario: str,
+  enviados: num,
+});
+/** GET /secuencias/:id/sugerencias: «Mejorar con IA» por correo. */
+export const sugerenciaSchema = z.object({
+  id,
+  orden: num,
+  instruccion: str,
+  estado: z.enum(["en_cola", "trabajando", "lista", "fallida"]),
+  creadaEn: str,
+  asunto: str.optional(),
+  cuerpo: str.optional(),
+  porQue: str.optional(),
+  original: z.object({ asunto: str.optional(), cuerpo: str }).optional(),
+  error: str.optional(),
 });

@@ -11,7 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { FeedbackProvider } from "../components/ui";
 import { route, reset, db } from "../mocks/handlers";
-import Propuestas from "./propuestas/Page";
+import Empresas from "./empresas/Page";
 import Descubrimiento from "./descubrimiento/Page";
 import ImportCSV from "./contactos/ImportCSV";
 function wrapper(children: ReactNode, path = "/") {
@@ -33,21 +33,17 @@ beforeEach(() => {
   );
 });
 describe("Pantallas críticas", () => {
-  it("aprobar propuesta pide confirmación antes de mutar", async () => {
-    wrapper(<Propuestas />, "/propuestas/pr3");
-    const approve = await screen.findByRole("button", {
-      name: "Aprobar ruta",
-    });
-    await waitFor(() => expect(approve).not.toBeDisabled());
-    fireEvent.click(approve);
-    expect(db.propuestas[2].estado).toBe("pendiente");
+  it("aceptar un dato sugerido por la IA pide confirmación antes de mutar", async () => {
+    wrapper(<Empresas />, "/empresas/e1");
+    const bloque = (
+      await screen.findByText("Datos sugeridos por la IA")
+    ).closest("section")!;
+    fireEvent.click(within(bloque).getByRole("button", { name: "Aceptar" }));
+    expect(db.propuestas[0].estado).toBe("pendiente");
     const dialogo = screen.getByRole("dialog");
-    expect(dialogo).toHaveTextContent("elegibles");
-    expect(dialogo).toHaveTextContent("Aprobar no envía ningún correo");
-    fireEvent.click(
-      within(dialogo).getByRole("button", { name: "Aprobar ruta" }),
-    );
-    await waitFor(() => expect(db.campanas[1].estado).toBe("aprobada"));
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Confirmar" }));
+    await waitFor(() => expect(db.propuestas[0].estado).toBe("aprobada"));
+    expect(db.empresas.find((e) => e.id === "e1")!.tamano).toBe("11-50");
   });
   it("aceptar resultado pide confirmar y actualiza su estado", async () => {
     wrapper(<Descubrimiento />, "/descubrimiento");

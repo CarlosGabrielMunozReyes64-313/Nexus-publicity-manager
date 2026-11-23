@@ -83,7 +83,7 @@ npm run verificar:despliegue -- https://su-app.vercel.app
 3. Abra un contacto: evidencias, prueba legal y aprobación. Importar nunca verifica un correo ni aprueba una base legal.
 4. Empresas → Duplicados: compare, fusione o marque «No es duplicado».
 5. Descubrimiento: acepte un resultado; el que coincide con una empresa existente queda bloqueado.
-6. Segmentos, Propuestas, Secuencias y Campañas: aprobar no envía; activar sí (en la API real).
+6. Segmentos, Secuencias de correo y Campañas: aprobar no envía; activar sí (en la API real). En Secuencias de correo, guardar crea un borrador y lo aprobado se sigue enviando hasta aprobar los cambios.
 7. Respuestas: revise el borrador antes de enviar. Crear oportunidad la vincula con la respuesta y su campaña.
 8. Embudo: mover una oportunidad a Cliente retira a sus contactos de las secuencias.
 9. Informes: elija el periodo; el embudo de esa pestaña sigue las mismas fechas. Registre un costo con su fecha real.

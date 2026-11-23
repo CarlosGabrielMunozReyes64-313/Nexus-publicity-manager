@@ -16,7 +16,6 @@ import {
   Building2,
   Compass,
   Layers,
-  Sparkles,
   Mail,
   Send,
   Inbox,
@@ -40,7 +39,6 @@ const pages = {
   empresas: lazy(() => import("../features/empresas/Page")),
   descubrimiento: lazy(() => import("../features/descubrimiento/Page")),
   segmentos: lazy(() => import("../features/segmentos/Page")),
-  propuestas: lazy(() => import("../features/propuestas/Page")),
   secuencias: lazy(() => import("../features/secuencias/Page")),
   campanas: lazy(() => import("../features/campanas/Page")),
   respuestas: lazy(() => import("../features/respuestas/Page")),
@@ -66,8 +64,7 @@ const nav: {
   {
     group: "Campañas",
     items: [
-      ["propuestas", "Propuestas", Sparkles],
-      ["secuencias", "Secuencias", Mail],
+      ["secuencias", "Secuencias de correo", Mail],
       ["campanas", "Campañas activas", Send],
     ],
   },
@@ -138,7 +135,7 @@ function Layout() {
   const [q, setQ] = useState("");
   const contactos = useResource("/contactos", S.contactoSchema.array());
   const empresas = useResource("/empresas", S.empresaSchema.array());
-  const propuestas = useResource("/propuestas", S.propuestaSchema.array());
+  const secuencias = useResource("/secuencias", S.secuenciaSchema.array());
   const respuestas = useResource("/respuestas", S.respuestaSchema.array());
   const integraciones = useResource(
     "/integraciones",
@@ -176,10 +173,16 @@ function Layout() {
                 >
                   <Icon size={16} />
                   {label}
-                  {path === "propuestas" && (
-                    <span className={styles.count}>
-                      {propuestas.data?.filter((p) => p.estado === "pendiente")
-                        .length ?? "—"}
+                  {path === "secuencias" && (
+                    <span
+                      className={styles.count}
+                      title="Secuencias por aprobar"
+                    >
+                      {secuencias.data?.filter(
+                        (s) =>
+                          s.estadoEditor === "borrador" ||
+                          s.estadoEditor === "cambios_sin_aprobar",
+                      ).length ?? "—"}
                     </span>
                   )}
                   {path === "respuestas" && (
@@ -350,6 +353,33 @@ function Protected() {
     />
   );
 }
+/** /propuestas/:id → el editor de su secuencia (si era de una campaña) o la lista. */
+export function RedirigirPropuesta() {
+  const id = useLocation().pathname.split("/")[2];
+  const propuesta = useResource(
+    `/propuestas/${id ?? ""}`,
+    S.propuestaSchema,
+    Boolean(id),
+  );
+  const campanas = useResource(
+    "/campanas",
+    S.campanaSchema.array(),
+    propuesta.data?.tipo === "campana",
+  );
+  if (!id || propuesta.error) return <Navigate to="/secuencias" replace />;
+  if (!propuesta.data) return <Skeleton />;
+  if (propuesta.data.tipo !== "campana")
+    return <Navigate to="/secuencias" replace />;
+  if (campanas.error) return <Navigate to="/secuencias" replace />;
+  if (!campanas.data) return <Skeleton />;
+  const cam = campanas.data.find((c) => c.id === propuesta.data.objetivoId);
+  return (
+    <Navigate
+      to={cam ? `/secuencias/${cam.secuenciaId}` : "/secuencias"}
+      replace
+    />
+  );
+}
 export default function App() {
   return (
     <BrowserRouter>
@@ -364,6 +394,9 @@ export default function App() {
                 element={<Page />}
               />
             ))}
+            {/* Propuestas ya no existe: sus enlaces llevan a Secuencias de correo. */}
+            <Route path="propuestas" element={<RedirigirPropuesta />} />
+            <Route path="propuestas/:id" element={<RedirigirPropuesta />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

@@ -1,6 +1,6 @@
-import { beforeEach, describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
 import { route, reset, db } from "./handlers";
-import { demoRutas } from "./rutas";
+import { ADMIN_CORREO, demoIA } from "./secuencias";
 import * as S from "../api/schemas";
 async function call(path: string, method = "GET", body?: unknown) {
   return route(
@@ -24,15 +24,26 @@ describe("Flujos del contrato mock", () => {
     expect(db.campanas[1].versionAprobada).toBe(2);
     expect(db.auditoria).toHaveLength(51);
   });
-  it("editar secuencia pausa inscripciones y revoca aprobación", async () => {
+  it("editar una secuencia activa guarda un borrador y no toca los envíos", async () => {
+    const activas = db.inscripciones.filter(
+      (i) => i.estado === "activa",
+    ).length;
     const result = await call("/secuencias/s1", "PUT", {
       ...db.secuencias[0],
       nombre: "Nueva versión",
     });
     expect(result.ok).toBe(true);
-    expect(db.campanas[0].estado).toBe("en_revision");
-    expect(db.campanas[0].versionAprobada).toBeUndefined();
-    expect(db.inscripciones.every((i) => i.estado === "pausada")).toBe(true);
+    expect(db.campanas[0].estado).toBe("activa");
+    expect(db.campanas[0].versionAprobada).toBe(1);
+    expect(db.secuencias[0].nombre).not.toBe("Nueva versión");
+    expect(db.inscripciones.filter((i) => i.estado === "activa")).toHaveLength(
+      activas,
+    );
+    const s = S.secuenciaSchema.parse(
+      await (await call("/secuencias/s1")).json(),
+    );
+    expect(s.estadoEditor).toBe("cambios_sin_aprobar");
+    expect(s.versionBorrador).toBe(2);
   });
   it("rechazo sin motivo no muta estado", async () => {
     const r = await call("/propuestas/pr1/rechazar", "POST", {
@@ -144,97 +155,8 @@ describe("Flujos del contrato mock", () => {
     });
     expect(db.propuestas[2].version).toBe(3);
     expect(db.propuestas[2].versiones).toHaveLength(3);
-    expect(db.campanas[1].estado).toBe("en_revision");
-  });
-  it("escenario completo de una ruta de correos (9 pasos, sin envíos)", async () => {
-    demoRutas.esperaMs = 0;
-    try {
-      const json = async (path: string, method = "GET", body?: unknown) => {
-        const r = await call(path, method, body);
-        expect(r.status, path).toBe(200);
-        return r.json();
-      };
-      const inscripciones = db.inscripciones.length;
-      // 1. Pedir una ruta de 3 correos.
-      await json("/propuestas/rutas-correo", "POST", {
-        segmentoId: "seg1",
-        objetivo: "Que completen el diagnóstico RSE Express",
-        numeroCorreos: 3,
-      });
-      // 2. Verla lista.
-      const [sol] = S.solicitudRutaSchema
-        .array()
-        .parse(await json("/propuestas/solicitudes"));
-      expect(sol).toMatchObject({ estado: "lista", tipo: "proponer_campana" });
-      const id = sol.propuestaId!;
-      let p = S.propuestaSchema.parse(await json(`/propuestas/${id}`));
-      expect(p.versiones[0].autor).toBe("agente");
-      const v1 = S.rutaCorreoSchema.parse(p.versiones[0].contenido);
-      expect(v1.pasos).toHaveLength(3);
-      expect(v1.notasAgente?.general).toBeTruthy();
-      // 3. Previsualizarla con un contacto real.
-      const [contacto] = S.contactoElegibleSchema
-        .array()
-        .parse(await json(`/propuestas/${id}/elegibles`));
-      const previa = S.vistaPreviaSchema.parse(
-        await json(`/propuestas/${id}/previsualizar`, "POST", {
-          contactoId: contacto.id,
-        }),
-      );
-      expect(previa.pasos[0].cuerpo).not.toMatch(/\{\{/);
-      // 4. Editar el correo 2.
-      const editado = structuredClone(v1);
-      editado.pasos[1].cuerpo =
-        "Hola, {{nombre}}: versión del administrador para el segundo correo.\n{{firma}}\n{{baja}}";
-      expect(
-        (await json(`/propuestas/${id}`, "PUT", { contenido: editado }))
-          .version,
-      ).toBe(2);
-      // 5. Comparar la versión 1 con la 2: solo cambia el correo 2.
-      p = S.propuestaSchema.parse(await json(`/propuestas/${id}`));
-      const v2 = S.rutaCorreoSchema.parse(p.versiones[1].contenido);
-      expect(p.versiones[1].autor).toBe("admin");
-      expect(v2.pasos.map((x, i) => x.cuerpo === v1.pasos[i].cuerpo)).toEqual([
-        true,
-        false,
-        true,
-      ]);
-      expect(v2.notasAgente?.pasos[1].editadoPorAdmin).toBe(true);
-      // 6. Rechazar con comentario (pidiendo versión nueva).
-      await json(`/propuestas/${id}/rechazar`, "POST", {
-        comentario: "Más corto el primer correo",
-      });
-      // 7. Recibir la versión 3 del agente.
-      const sols = S.solicitudRutaSchema
-        .array()
-        .parse(await json("/propuestas/solicitudes"));
-      expect(sols[0]).toMatchObject({
-        tipo: "revisar_campana",
-        estado: "lista",
-      });
-      p = S.propuestaSchema.parse(await json(`/propuestas/${id}`));
-      expect(p.version).toBe(3);
-      expect(p.versiones[2].autor).toBe("agente");
-      expect(p.versiones[1].decision).toBe("rechazada");
-      // 8. Aprobar (la revisión lo permite).
-      expect(
-        S.revisionRutaSchema.parse(await json(`/propuestas/${id}/revision`))
-          .puedeAprobar,
-      ).toBe(true);
-      await json(`/propuestas/${id}/aprobar`, "POST", {});
-      // 9. La campaña queda aprobada y no se envió nada.
-      const cam = db.campanas.find((c) => c.id === p.objetivoId)!;
-      expect(cam.estado).toBe("aprobada");
-      expect(cam.metricas.enviados).toBe(0);
-      expect(db.inscripciones).toHaveLength(inscripciones);
-      const s = db.secuencias.find((x) => x.id === cam.secuenciaId)!;
-      const v3 = S.rutaCorreoSchema.parse(p.versiones[2].contenido);
-      expect(s.pasos.map((x) => x.cuerpo)).toEqual(
-        v3.pasos.map((x) => x.cuerpo),
-      );
-    } finally {
-      demoRutas.esperaMs = 6000;
-    }
+    // Editar crea un borrador: lo aprobado sigue vigente hasta aprobar de nuevo.
+    expect(db.campanas[1].estado).toBe("aprobada");
   });
   it("todos los datos de ejemplo cumplen sus esquemas", () => {
     S.empresaSchema.array().parse(db.empresas);
@@ -247,5 +169,193 @@ describe("Flujos del contrato mock", () => {
     S.oportunidadSchema.array().parse(db.oportunidades);
     S.auditoriaSchema.array().parse(db.auditoria);
     expect(db.metricas).toHaveLength(90);
+  });
+});
+
+describe("Escenario de la demo: secuencia de correo de punta a punta", () => {
+  beforeEach(() => {
+    demoIA.esperaMs = 0;
+  });
+  afterEach(() => {
+    demoIA.esperaMs = 6000;
+  });
+  async function json<T>(
+    schema: { parse: (v: unknown) => T },
+    path: string,
+    method = "GET",
+    body?: unknown,
+  ): Promise<T> {
+    const r = await call(path, method, body);
+    const datos: unknown = await r.json();
+    if (!r.ok) throw new Error(`${method} ${path}: ${JSON.stringify(datos)}`);
+    return schema.parse(datos);
+  }
+  const conCuerpo2 = (
+    c: Awaited<ReturnType<typeof S.borradorSchema.parse>>["contenido"],
+    cuerpo: string,
+  ) => {
+    const { notasAgente, ...secuencia } = S.contenidoSecuenciaSchema.parse(c);
+    void notasAgente;
+    return {
+      secuencia: {
+        ...secuencia,
+        pasos: secuencia.pasos.map((x, i) => (i === 1 ? { ...x, cuerpo } : x)),
+      },
+    };
+  };
+
+  it("pedir a la IA, editar, previsualizar, probar, aprobar, activar y aprobar y reanudar", async () => {
+    const enviadosAntes = db.interacciones.length;
+    // 1. Pedir la secuencia a la IA (solo con datos agregados del segmento).
+    await json(S.okSchema, "/secuencias/ia", "POST", {
+      segmentoId: "seg1",
+      objetivo: "Invitar al diagnóstico RSE Express",
+      numeroCorreos: 3,
+    });
+    const solicitudes = await json(
+      S.solicitudSecuenciaSchema.array(),
+      "/secuencias/solicitudes",
+    );
+    const lista = solicitudes.find(
+      (x) => x.segmentoId === "seg1" && x.tipo === "proponer_campana",
+    );
+    expect(lista?.estado).toBe("lista");
+    const id = lista!.secuenciaId!;
+
+    // 2. Abrirla: es un borrador de la IA, versión 1, sin aprobar.
+    const sec = await json(S.secuenciaSchema, `/secuencias/${id}`);
+    expect(sec.estadoEditor).toBe("borrador");
+    expect(sec.versionAprobada).toBeUndefined();
+    const v1 = await json(S.borradorSchema, `/secuencias/${id}/borrador`);
+    expect([v1.version, v1.autor]).toEqual([1, "agente"]);
+    expect(v1.contenido.pasos).toHaveLength(3);
+
+    // 3. Editar el correo 2 y guardar: versión 2 del administrador.
+    const texto2 =
+      "Hola, {{nombre}}:\n\nVuelvo sobre el diagnóstico para {{empresa}}: {{enlace}}\n\n{{firma}}\n{{baja}}";
+    const g = await json(
+      S.guardadoSchema,
+      `/secuencias/${id}/borrador`,
+      "PUT",
+      conCuerpo2(v1.contenido, texto2),
+    );
+    expect(g.version).toBe(2);
+    const versiones = await json(
+      S.versionSecuenciaSchema.array(),
+      `/secuencias/${id}/versiones`,
+    );
+    expect(versiones.map((v) => v.autor)).toEqual(["agente", "admin"]);
+
+    // 4. Vista previa con un contacto real del segmento.
+    const [contacto] = await json(
+      S.contactoElegibleSchema.array(),
+      `/secuencias/${id}/elegibles`,
+    );
+    const previa = await json(
+      S.vistaPreviaSchema,
+      `/secuencias/${id}/previsualizar`,
+      "POST",
+      { contactoId: contacto.id },
+    );
+    expect(previa.pasos[1].cuerpo).toContain(
+      `Hola, ${db.contactos.find((c) => c.id === contacto.id)!.nombre}:`,
+    );
+    expect(previa.pasos[1].cuerpo).not.toContain("{{");
+
+    // 5. Enviar una prueba del correo 2: solo al administrador.
+    const prueba = await json(
+      S.pruebaEnviadaSchema,
+      `/secuencias/${id}/prueba`,
+      "POST",
+      { contactoId: contacto.id, orden: 2 },
+    );
+    expect(prueba).toEqual({
+      ok: true,
+      destinatario: ADMIN_CORREO,
+      enviados: 1,
+    });
+    expect(db.pruebas.at(-1)?.asunto.startsWith("[Prueba] ")).toBe(true);
+
+    // 6. Aprobar: no envía nada; la campaña queda aprobada.
+    const rev = await json(
+      S.revisionSecuenciaSchema,
+      `/secuencias/${id}/revision`,
+    );
+    expect(rev.puedeAprobar).toBe(true);
+    await json(S.okSchema, `/secuencias/${id}/aprobar`, "POST", {});
+    const aprobada = await json(S.secuenciaSchema, `/secuencias/${id}`);
+    expect(aprobada.versionAprobada).toBe(2);
+    expect(aprobada.pasos[1].cuerpo).toBe(texto2);
+    const camId = aprobada.campanaId!;
+    expect(db.campanas.find((c) => c.id === camId)?.estado).toBe("aprobada");
+    expect(db.interacciones.length).toBe(enviadosAntes);
+
+    // 7. Activar la campaña con los contactos elegibles.
+    await json(S.okSchema, `/campanas/${camId}/inscribir`, "POST", [
+      contacto.id,
+    ]);
+    await json(S.okSchema, `/campanas/${camId}/reanudar`, "POST", {});
+    expect(db.campanas.find((c) => c.id === camId)?.estado).toBe("activa");
+    const activas = () =>
+      db.inscripciones.filter(
+        (i) => i.campanaId === camId && i.estado === "activa",
+      );
+    expect(activas()).toHaveLength(1);
+
+    // 8. Editar otra vez: se guarda un borrador y se sigue enviando lo aprobado.
+    const v2 = await json(S.borradorSchema, `/secuencias/${id}/borrador`);
+    const texto3 = texto2.replace("Vuelvo sobre", "Le recuerdo");
+    await json(
+      S.guardadoSchema,
+      `/secuencias/${id}/borrador`,
+      "PUT",
+      conCuerpo2(v2.contenido, texto3),
+    );
+    const enEdicion = await json(S.secuenciaSchema, `/secuencias/${id}`);
+    expect(enEdicion.estadoEditor).toBe("cambios_sin_aprobar");
+    expect(enEdicion.pasos[1].cuerpo).toBe(texto2);
+    expect(db.campanas.find((c) => c.id === camId)?.estado).toBe("activa");
+    expect(activas()).toHaveLength(1);
+
+    // 9. Aprobar y reanudar: la versión nueva se envía sin dejar la campaña pausada.
+    await json(S.okSchema, `/secuencias/${id}/aprobar-y-reanudar`, "POST", {});
+    const final = await json(S.secuenciaSchema, `/secuencias/${id}`);
+    expect(final.pasos[1].cuerpo).toBe(texto3);
+    expect(final.versionAprobada).toBe(3);
+    expect(final.estadoEditor).toBe("activa");
+    expect(db.campanas.find((c) => c.id === camId)?.estado).toBe("activa");
+    expect(activas()).toHaveLength(1);
+  });
+
+  it("todas las respuestas nuevas de la demo cumplen sus esquemas", async () => {
+    const lista = await json(S.secuenciaSchema.array(), "/secuencias");
+    for (const s of lista) {
+      await json(S.secuenciaSchema, `/secuencias/${s.id}`);
+      await json(S.borradorSchema, `/secuencias/${s.id}/borrador`);
+      await json(
+        S.versionSecuenciaSchema.array(),
+        `/secuencias/${s.id}/versiones`,
+      );
+      await json(S.revisionSecuenciaSchema, `/secuencias/${s.id}/revision`);
+      await json(
+        S.contactoElegibleSchema.array(),
+        `/secuencias/${s.id}/elegibles`,
+      );
+    }
+    await json(S.secuenciaSchema.array(), "/secuencias?archivadas=true");
+    await json(S.solicitudSecuenciaSchema.array(), "/secuencias/solicitudes");
+    const nueva = await json(S.creadaSchema, "/secuencias", "POST", {
+      segmentoId: "seg1",
+      nombre: "Secuencia en blanco",
+      objetivo: "Invitar al diagnóstico RSE Express",
+      llamadaAccion: "Agendar el diagnóstico",
+    });
+    await json(S.creadaSchema, `/secuencias/${nueva.id}/duplicar`, "POST", {});
+    await json(S.okSchema, `/secuencias/${nueva.id}/archivar`, "POST", {});
+    const r = await call("/secuencias/s1/archivar", "POST", {});
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({
+      message: "Pause la campaña antes de archivar la secuencia",
+    });
   });
 });

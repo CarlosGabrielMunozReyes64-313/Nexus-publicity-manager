@@ -141,10 +141,8 @@ function Detail({ c }: { c: Campana }) {
         )}
         <Actions c={c} />
         <p>
-          <Link to={`/secuencias/${c.secuenciaId}/editar`}>
-            Revisar secuencia
-          </Link>{" "}
-          · Versión aprobada: {c.versionAprobada ?? "Pendiente"}
+          <Link to={`/secuencias/${c.secuenciaId}`}>Revisar secuencia</Link> ·
+          Versión aprobada: {c.versionAprobada ?? "Pendiente"}
         </p>
       </Card>
       <div className="grid three" style={{ margin: "20px 0" }}>

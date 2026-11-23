@@ -1,5 +1,5 @@
 import type * as T from "../types";
-import { rutaDelAgente } from "./rutas";
+import { secuenciaDeLaIA } from "./secuencias";
 const hoy = new Date();
 export const iso = (dias = 0) =>
   new Date(hoy.getTime() - dias * 86400000).toISOString();
@@ -279,15 +279,19 @@ export function crearDatos() {
       propuestoPor: "agente",
     },
   ];
-  // Ruta de ejemplo del Estratega-redactor (versión 1) y su edición (versión 2).
-  const rutaAgente = rutaDelAgente({
+  // Secuencia de ejemplo de la IA (versión 1) y su edición por el administrador (versión 2).
+  const rutaAgente = secuenciaDeLaIA({
     objetivo: "Que completen el diagnóstico RSE Express",
     numeroCorreos: 3,
     segmento: "Proveedores de ingenios · Palmira",
     elegibles: 8,
   });
   const { notasAgente: notasEjemplo, ...secuenciaEjemplo } = rutaAgente;
-  secuencias.push({ ...(secuenciaEjemplo as T.Secuencia), id: "s2" });
+  secuencias.push({
+    ...secuenciaEjemplo,
+    id: "s2",
+    pasos: secuenciaEjemplo.pasos.map((p, i) => ({ ...p, id: `s2-p${i + 1}` })),
+  });
   const rutaAdmin = {
     ...rutaAgente,
     pasos: rutaAgente.pasos.map((p, i) =>
@@ -402,6 +406,102 @@ export function crearDatos() {
     ],
     creadaEn: iso(4),
   }));
+  // Datos sugeridos por la IA (se muestran en Empresas) y una mejora (en Informes).
+  propuestas[0] = {
+    ...propuestas[0],
+    resumen: "Tamaño sugerido para Empaques Samán S.A.S.",
+    version: 1,
+    versiones: [
+      {
+        version: 1,
+        contenido: { campos: { tamano: "11-50" } },
+        fecha: iso(2),
+        autor: "agente",
+      },
+    ],
+    fuentes: [
+      {
+        ...evidencia("tamano", "11-50", "verificado"),
+        cita: "Página «Nosotros»: un equipo de 38 personas en Palmira.",
+      },
+    ],
+  };
+  propuestas[3] = {
+    ...propuestas[3],
+    version: 1,
+    versiones: [
+      {
+        version: 1,
+        contenido: {
+          objetivo: "campana",
+          id: "cam1",
+          cambios: { topeDiario: 15 },
+        },
+        fecha: iso(1),
+        autor: "agente",
+      },
+    ],
+  };
+  propuestas[4] = {
+    ...propuestas[4],
+    resumen: "Correo corporativo deducido: compras@empaquessaman.example",
+    version: 1,
+    versiones: [
+      {
+        version: 1,
+        contenido: { correo: "compras@empaquessaman.example" },
+        fecha: iso(1),
+        autor: "agente",
+      },
+    ],
+    fuentes: [evidencia("correo", "compras@empaquessaman.example", "inferido")],
+  };
+  // La secuencia de cam1 la escribió la IA y ya está aprobada (versión 1).
+  propuestas.push({
+    id: "pr6",
+    objetivoId: "cam1",
+    agente: "estratega_redactor",
+    tipo: "campana",
+    estado: "aprobada",
+    resumen: "Tres correos para invitar al diagnóstico RSE Express.",
+    version: 1,
+    versiones: [
+      {
+        version: 1,
+        contenido: {
+          ...structuredClone(secuencias[0]),
+          notasAgente: {
+            general:
+              "Proveedores agroindustriales que reciben cuestionarios de sus clientes grandes: tres correos cortos en el mismo hilo, con una sola llamada a la acción.",
+            pasos: [
+              {
+                orden: 1,
+                proposito: "Presentar el problema y el diagnóstico gratuito",
+                porQue: "Parte de una exigencia que este segmento ya conoce.",
+              },
+              {
+                orden: 2,
+                proposito: "Aportar valor aunque no hagan el diagnóstico",
+                porQue: "Nombra los temas de los cuestionarios de proveedores.",
+              },
+              {
+                orden: 3,
+                proposito: "Cerrar con cortesía",
+                porQue: "Avisa que es el último mensaje y ofrece 20 minutos.",
+              },
+            ],
+          },
+        },
+        fecha: iso(10),
+        autor: "agente",
+        decision: "aprobada",
+        decididaEn: iso(9),
+      },
+    ],
+    fuentes: [],
+    decision: { fecha: iso(9) },
+    creadaEn: iso(10),
+  });
   propuestas[2] = {
     ...propuestas[2],
     resumen:
@@ -684,6 +784,10 @@ export function crearDatos() {
     limites,
     duplicados,
     recomendaciones,
+    /** Secuencias archivadas (id → fecha), última edición y pruebas enviadas (demo). */
+    archivadas: {} as Record<string, string>,
+    actualizadas: {} as Record<string, string>,
+    pruebas: [] as { fecha: string; destinatario: string; asunto: string }[],
     clienteIdeal: {
       criterios: [
         "MiPymes de 11 a 200 empleados",

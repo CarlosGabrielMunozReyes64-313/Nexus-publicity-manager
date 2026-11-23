@@ -13,7 +13,6 @@ import { FeedbackProvider } from "../components/ui";
 import { db, reset, route } from "../mocks/handlers";
 import ImportCSV from "./contactos/ImportCSV";
 import Auditoria from "./auditoria/Page";
-import Propuestas from "./propuestas/Page";
 import Segmentos from "./segmentos/Page";
 import { agruparPorDia, indicadoresDeCosto } from "./informes/Page";
 import { claveDia, fecha, fechaHora, sumarDias } from "../lib/formato";
@@ -254,21 +253,6 @@ describe("Auditoría (09)", () => {
     ).toBe(true);
   });
 });
-describe("Propuestas (extra)", () => {
-  it("muestra el contenido de la versión vigente, que es el que se aprobará", async () => {
-    const p = db.propuestas.find((x) => x.id === "pr3")!;
-    const v = p.versiones.at(-1)!;
-    const contenido = structuredClone(v.contenido) as {
-      pasos: { asunto?: string }[];
-    };
-    contenido.pasos[0].asunto = "Asunto propuesto por el agente";
-    v.contenido = contenido;
-    montar(<Propuestas />, "/propuestas/pr3");
-    expect(
-      await screen.findByText("Asunto propuesto por el agente"),
-    ).toBeInTheDocument();
-  });
-});
 describe("Segmentos (extra)", () => {
   it("no permite aprobar reglas sin guardar y lo vuelve a permitir al guardar", async () => {
     montar(<Segmentos />, "/segmentos/seg2");
@@ -292,7 +276,7 @@ describe("Segmentos (extra)", () => {
   });
 });
 describe("Pedidos de propuestas a los agentes (extra)", () => {
-  it("pide segmentos al agente y el pedido aparece en Propuestas", async () => {
+  it("pide segmentos al agente y el pedido aparece en Segmentos", async () => {
     montar(<Segmentos />, "/segmentos");
     fireEvent.click(
       await screen.findByRole("button", { name: "Pedir propuestas al agente" }),
@@ -301,7 +285,7 @@ describe("Pedidos de propuestas a los agentes (extra)", () => {
     expect(within(dialogo).getByText(/presupuesto de IA/)).toBeInTheDocument();
     fireEvent.click(within(dialogo).getByRole("button", { name: "Confirmar" }));
     expect(
-      await screen.findByText("Pedido enviado. Siga su avance en Propuestas."),
+      await screen.findByText("Pedido enviado. Siga su avance aquí."),
     ).toBeInTheDocument();
     expect(llamadas.some((u) => u.endsWith("/segmentos/proponer"))).toBe(true);
     expect(
@@ -311,26 +295,26 @@ describe("Pedidos de propuestas a los agentes (extra)", () => {
     ).toBe(true);
   });
 
-  it("solo ofrece pedir campaña en un segmento aprobado y muestra el motivo si no se puede", async () => {
+  it("solo ofrece pedir secuencia en un segmento aprobado", async () => {
     const { unmount } = montar(<Segmentos />, "/segmentos/seg2");
     await screen.findByRole("button", { name: "Aprobar" });
     expect(
-      screen.queryByRole("button", { name: "Pedir campaña al agente" }),
+      screen.queryByRole("button", { name: "Pedir secuencia a la IA" }),
     ).toBeNull();
     unmount();
     montar(<Segmentos />, "/segmentos/seg1");
     fireEvent.click(
-      await screen.findByRole("button", { name: "Pedir campaña al agente" }),
+      await screen.findByRole("button", { name: "Pedir secuencia a la IA" }),
     );
     const dialogo = await screen.findByRole("dialog");
     fireEvent.click(within(dialogo).getByRole("button", { name: "Confirmar" }));
     expect(
       await screen.findByText(
-        "Pedido enviado. La ruta aparecerá en Propuestas cuando esté lista.",
+        "Pedido enviado. La secuencia aparecerá en Secuencias de correo cuando esté lista.",
       ),
     ).toBeInTheDocument();
     const solicitudes = await (
-      await route(new Request("http://localhost/api/propuestas/solicitudes"))
+      await route(new Request("http://localhost/api/secuencias/solicitudes"))
     ).json();
     expect(solicitudes[0]).toMatchObject({
       tipo: "proponer_campana",
@@ -370,11 +354,8 @@ describe("Pedidos de propuestas a los agentes (extra)", () => {
         return route(new Request(new URL(String(input), location.href), init));
       },
     );
-    montar(<Propuestas />, "/propuestas");
-    // Los pedidos de segmentos se ven en «Otras propuestas»; las rutas tienen su panel.
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Otras propuestas" }),
-    );
+    montar(<Segmentos />, "/segmentos");
+    // Los pedidos de segmentos se ven en Segmentos; los de secuencias, en Secuencias.
     expect(
       await screen.findByText("Pedidos de segmentos al agente"),
     ).toBeInTheDocument();

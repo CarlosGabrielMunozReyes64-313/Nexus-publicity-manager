@@ -7,61 +7,69 @@ import * as S from "../../api/schemas";
 import { Badge, Button, Card, useFeedback } from "../../components/ui";
 import { fechaHora } from "../../lib/formato";
 
-type Solicitud = z.infer<typeof S.solicitudRutaSchema>;
-const SIETE_DIAS = 7 * 86400000;
+type Solicitud = z.infer<typeof S.solicitudSecuenciaSchema>;
 export const INTERVALO_SOLICITUDES = 15000;
+const SIETE_DIAS = 7 * 86400000;
 
-const activa = (s: Solicitud) =>
+const enCurso = (s: Solicitud) =>
   s.estado === "en_cola" || s.estado === "trabajando";
 
-/** Consulta cada 15 s solo mientras alguna solicitud siga en cola o en proceso. */
+/** Consulta cada 15 s solo mientras alguna solicitud siga en curso. */
 export const intervaloSolicitudes = (datos?: Solicitud[]) =>
-  datos?.some(activa) ? INTERVALO_SOLICITUDES : false;
+  datos?.some(enCurso) ? INTERVALO_SOLICITUDES : false;
 
-const ESTADO: Record<
-  Solicitud["estado"],
-  [string, "success" | "warning" | "error" | "info"]
-> = {
-  en_cola: ["En cola", "warning"],
-  trabajando: ["El agente está trabajando", "info"],
-  lista: ["Lista", "success"],
-  fallida: ["No se pudo completar", "error"],
-};
+function texto(s: Solicitud) {
+  const seg = s.segmento ?? "un segmento";
+  if (s.tipo === "revisar_campana")
+    return enCurso(s)
+      ? `La IA está escribiendo otra versión para ${seg}…`
+      : `Otra versión para ${seg}`;
+  if (s.tipo === "reescribir_correo")
+    return enCurso(s)
+      ? "La IA está mejorando un correo…"
+      : "Mejora de un correo";
+  return enCurso(s)
+    ? `La IA está escribiendo una secuencia para ${seg}…`
+    : `Secuencia para ${seg}`;
+}
 
-const titulo = (s: Solicitud) =>
-  s.tipo === "proponer_campana"
-    ? `Ruta para «${s.segmento ?? "segmento eliminado"}»`
-    : `Versión nueva para «${s.segmento ?? "segmento eliminado"}»`;
-
-/** Panel «Solicitudes en curso»: pedidos de rutas de los últimos 7 días. */
+/** Solicitudes a la IA de los últimos 7 días (arriba de la lista). */
 export default function Solicitudes() {
   const cache = useQueryClient();
   const { notify } = useFeedback();
   const [reintentando, setReintentando] = useState("");
   const q = useQuery({
-    queryKey: ["/propuestas/solicitudes"],
+    queryKey: ["/secuencias/solicitudes"],
     queryFn: () =>
-      request("/propuestas/solicitudes", S.solicitudRutaSchema.array()),
+      request("/secuencias/solicitudes", S.solicitudSecuenciaSchema.array()),
     refetchInterval: (query) => intervaloSolicitudes(query.state.data),
   });
   const listas = q.data?.filter((s) => s.estado === "lista").length ?? 0;
   useEffect(() => {
-    // Una solicitud terminada deja una ruta nueva: se recarga la lista.
-    if (listas) void cache.invalidateQueries({ queryKey: ["/propuestas"] });
+    // Una solicitud terminada deja una secuencia nueva o un borrador.
+    if (listas) void cache.invalidateQueries({ queryKey: ["/secuencias"] });
   }, [listas, cache]);
   const recientes = (q.data ?? []).filter(
-    (s) => Date.now() - new Date(s.creadaEn).getTime() <= SIETE_DIAS,
+    (s) =>
+      s.tipo !== "reescribir_correo" &&
+      Date.now() - new Date(s.creadaEn).getTime() <= SIETE_DIAS,
   );
   if (!recientes.length) return null;
   return (
     <div style={{ marginBottom: 20 }}>
-      <Card title="Solicitudes en curso">
+      <Card title="Solicitudes a la IA">
         <ul className="list">
           {recientes.map((s) => (
             <li key={s.id}>
               <div className="row">
-                <strong>{titulo(s)}</strong>
-                <Badge tono={ESTADO[s.estado][1]}>{ESTADO[s.estado][0]}</Badge>
+                <strong>{texto(s)}</strong>
+                {s.estado === "fallida" && (
+                  <Badge tono="error">No se pudo completar</Badge>
+                )}
+                {s.estado === "lista" && <Badge tono="success">Lista</Badge>}
+                {s.estado === "en_cola" && (
+                  <Badge tono="warning">En cola</Badge>
+                )}
                 <small className="muted">{fechaHora(s.creadaEn)}</small>
               </div>
               {s.objetivo && (
@@ -79,16 +87,14 @@ export default function Solicitudes() {
                       setReintentando(s.id);
                       try {
                         await request(
-                          `/propuestas/solicitudes/${s.id}/reintentar`,
+                          `/secuencias/solicitudes/${s.id}/reintentar`,
                           S.okSchema,
                           "POST",
                           {},
                         );
-                        notify(
-                          "Solicitud enviada de nuevo. El agente está preparando la ruta.",
-                        );
+                        notify("Solicitud enviada de nuevo a la IA.");
                         await cache.invalidateQueries({
-                          queryKey: ["/propuestas/solicitudes"],
+                          queryKey: ["/secuencias/solicitudes"],
                         });
                       } catch (e) {
                         notify(
@@ -105,10 +111,8 @@ export default function Solicitudes() {
                   </Button>
                 </div>
               )}
-              {s.estado === "lista" && s.propuestaId && (
-                <p>
-                  <Link to={`/propuestas/${s.propuestaId}`}>Ver la ruta →</Link>
-                </p>
+              {s.estado === "lista" && s.secuenciaId && (
+                <Link to={`/secuencias/${s.secuenciaId}`}>Abrir</Link>
               )}
             </li>
           ))}

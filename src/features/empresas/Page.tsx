@@ -15,6 +15,7 @@ import {
 import { Intro, Resource, Select, useCommand } from "../shared";
 import { moneda } from "../../lib/formato";
 import type { Empresa, Duplicado } from "../../types";
+import Sugerencias, { useSugerenciasPendientes } from "./Sugerencias";
 export default function Page() {
   const q = useResource("/empresas", S.empresaSchema.array());
   const [tab, setTab] = useState("Empresas");
@@ -23,6 +24,7 @@ export default function Page() {
   const cmd = useCommand();
   const id = useLocation().pathname.split("/")[2];
   const e = q.data?.find((e) => e.id === id);
+  const sugeridos = useSugerenciasPendientes();
   return (
     <>
       <Intro
@@ -40,6 +42,7 @@ export default function Page() {
             <>
               <Link to="/empresas">← Empresas</Link>
               <div className="grid" style={{ marginTop: 20 }}>
+                <Sugerencias e={e} />
                 <Card title="Datos de la empresa">
                   {/* El listado es liviano: la ficha pide las evidencias completas. */}
                   <Resource path={`/empresas/${e.id}`} schema={S.empresaSchema}>
@@ -157,9 +160,27 @@ export default function Page() {
                       accessorKey: "razonSocial",
                       header: "Razón social",
                       cell: (c) => (
-                        <Link to={`/empresas/${c.row.original.id}`}>
-                          <strong>{c.row.original.razonSocial}</strong>
-                        </Link>
+                        <>
+                          <Link to={`/empresas/${c.row.original.id}`}>
+                            <strong>{c.row.original.razonSocial}</strong>
+                          </Link>
+                          {sugeridos(c.row.original.id) > 0 && (
+                            <>
+                              {" "}
+                              <Badge tono="info">
+                                {sugeridos(c.row.original.id)} dato
+                                {sugeridos(c.row.original.id) === 1
+                                  ? ""
+                                  : "s"}{" "}
+                                sugerido
+                                {sugeridos(c.row.original.id) === 1
+                                  ? ""
+                                  : "s"}{" "}
+                                por la IA
+                              </Badge>
+                            </>
+                          )}
+                        </>
                       ),
                     },
                     { accessorKey: "sector", header: "Sector" },

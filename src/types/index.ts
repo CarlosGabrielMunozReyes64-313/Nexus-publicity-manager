@@ -152,7 +152,19 @@ export interface Paso {
   esperaDiasHabiles: number;
   mismoHilo: boolean;
   variables: VariableUsada[];
+  /** «texto» (por defecto) o «html»; en html, `cuerpo` es la versión en texto simple. */
+  formato?: "texto" | "html";
+  cuerpoHtml?: string;
 }
+
+export type EstadoEditor =
+  | "borrador"
+  | "cambios_sin_aprobar"
+  | "aprobada"
+  | "activa"
+  | "pausada"
+  | "finalizada"
+  | "archivada";
 
 export interface Secuencia {
   id: string;
@@ -162,6 +174,14 @@ export interface Secuencia {
   pasos: Paso[];
   metricasExito: string[];
   ventanaEnvio: { dias: number[]; desde: string; hasta: string };
+  campanaId?: string;
+  campanaEstado?: string;
+  segmentoId?: string;
+  estadoEditor?: EstadoEditor;
+  versionBorrador?: number;
+  versionAprobada?: number;
+  actualizadaEn?: string;
+  archivada?: boolean;
 }
 
 export type EstadoCampana =

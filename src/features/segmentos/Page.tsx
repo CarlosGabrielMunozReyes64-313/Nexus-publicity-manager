@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { z } from "zod";
 import { Link, useLocation } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { request } from "../../api/client";
 import { useResource } from "../../api/hooks";
+import { fechaHora } from "../../lib/formato";
 import * as S from "../../api/schemas";
 import type { Segmento, ReglaSegmento } from "../../types";
 import { Button, Card, Badge, QueryState, Table } from "../../components/ui";
@@ -33,18 +37,22 @@ export default function Page() {
             close={() => setNewItem(false)}
           />
         ) : (
-          <div className="grid">
-            {q.data?.map((s) => (
-              <Card key={s.id} title={s.nombre}>
-                <Badge>{s.estado}</Badge>
-                <p>{s.justificacion}</p>
-                <p>
-                  {s.tamano} contactos · versión {s.version} · {s.propuestoPor}
-                </p>
-                <Link to={`/segmentos/${s.id}`}>Revisar reglas →</Link>
-              </Card>
-            ))}
-          </div>
+          <>
+            <PedidosSegmentos />
+            <div className="grid">
+              {q.data?.map((s) => (
+                <Card key={s.id} title={s.nombre}>
+                  <Badge>{s.estado}</Badge>
+                  <p>{s.justificacion}</p>
+                  <p>
+                    {s.tamano} contactos · versión {s.version} ·{" "}
+                    {s.propuestoPor}
+                  </p>
+                  <Link to={`/segmentos/${s.id}`}>Revisar reglas →</Link>
+                </Card>
+              ))}
+            </div>
+          </>
         )}
       </QueryState>
     </>
@@ -59,10 +67,10 @@ function PedirSegmentos() {
         cmd.confirm({
           title: "Pedir propuestas de segmentos",
           summary:
-            "El agente Segmentador revisará sus empresas y el cliente ideal y propondrá segmentos. Consume presupuesto de IA. Las propuestas llegan a Propuestas en unos minutos para que usted las apruebe.",
+            "El agente Segmentador revisará sus empresas y el cliente ideal y propondrá segmentos. Consume presupuesto de IA. Los segmentos propuestos aparecen aquí, en Segmentos, en unos minutos para que usted los apruebe.",
           run: async () => {
             await cmd.run("/segmentos/proponer");
-            return "Pedido enviado. Siga su avance en Propuestas.";
+            return "Pedido enviado. Siga su avance aquí.";
           },
         })
       }
@@ -255,16 +263,16 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                   variant="primary"
                   onClick={() =>
                     cmd.confirm({
-                      title: "Pedir campaña al agente",
-                      summary: `El agente Estratega-redactor preparará una ruta de 3 correos para «${item.nombre}» con el objetivo «Que completen el diagnóstico RSE Express». Para elegir otro objetivo o número de correos, use «Pedir una ruta de correos» en Propuestas. Consume presupuesto de IA. No se envía nada: la ruta llega a Propuestas para que usted la revise y apruebe.`,
+                      title: "Pedir secuencia a la IA",
+                      summary: `La IA escribirá una secuencia de 3 correos para «${item.nombre}» con el objetivo «Que completen el diagnóstico RSE Express». Para elegir otro objetivo o número de correos, use «Nueva con IA» en Secuencias de correo. Consume presupuesto de IA. No se envía nada: la secuencia aparece en Secuencias de correo para que usted la edite y apruebe.`,
                       run: async () => {
                         await cmd.run(`/segmentos/${item.id}/proponer-campana`);
-                        return "Pedido enviado. La ruta aparecerá en Propuestas cuando esté lista.";
+                        return "Pedido enviado. La secuencia aparecerá en Secuencias de correo cuando esté lista.";
                       },
                     })
                   }
                 >
-                  Pedir campaña al agente
+                  Pedir secuencia a la IA
                 </Button>
               )}
             </div>
@@ -280,6 +288,67 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
             { accessorKey: "etapa", header: "Etapa" },
           ]}
         />
+      </Card>
+    </div>
+  );
+}
+
+type Pedido = z.infer<typeof S.solicitudAgenteSchema>;
+const pedidoActivo = (p: Pedido) =>
+  p.estado === "pendiente" || p.estado === "en_proceso";
+function estadoPedido(
+  p: Pedido,
+): [string, "success" | "warning" | "error" | "info"] {
+  if (p.estado === "pendiente")
+    return [p.intentos > 0 ? "Reintento programado" : "En cola", "warning"];
+  if (p.estado === "en_proceso") return ["El agente está trabajando", "info"];
+  if (p.estado === "completada") return ["Lista", "success"];
+  if (p.estado === "fallida") return ["No se pudo completar", "error"];
+  return ["Cancelado", "info"];
+}
+/** Pedidos de segmentos al agente: avance y motivo de un fallo. */
+function PedidosSegmentos() {
+  const cache = useQueryClient();
+  const q = useQuery({
+    queryKey: ["/agentes/solicitudes"],
+    queryFn: () =>
+      request("/agentes/solicitudes", S.solicitudAgenteSchema.array()),
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (p) => p.tipo === "proponer_segmentos" && pedidoActivo(p),
+      )
+        ? 4000
+        : false,
+  });
+  const pedidos = (q.data ?? []).filter((p) => p.tipo === "proponer_segmentos");
+  const listas = pedidos.filter((p) => p.estado === "completada").length;
+  useEffect(() => {
+    // Un pedido terminado deja segmentos nuevos: se recarga la lista.
+    if (listas) void cache.invalidateQueries({ queryKey: ["/segmentos"] });
+  }, [listas, cache]);
+  if (!pedidos.length) return null;
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <Card title="Pedidos de segmentos al agente">
+        <ul className="list">
+          {pedidos.map((p) => (
+            <li key={p.id}>
+              <div className="row">
+                <strong>Propuestas de segmentos</strong>
+                <Badge tono={estadoPedido(p)[1]}>{estadoPedido(p)[0]}</Badge>
+                <small className="muted">{fechaHora(p.creadaEn)}</small>
+              </div>
+              {p.error && (
+                <p className={p.estado === "fallida" ? "danger" : "muted"}>
+                  {p.error}
+                  {p.estado === "pendiente" && p.proximoIntento
+                    ? ` Nuevo intento: ${fechaHora(p.proximoIntento)}.`
+                    : ""}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
       </Card>
     </div>
   );

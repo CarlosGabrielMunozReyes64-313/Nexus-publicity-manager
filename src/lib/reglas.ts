@@ -107,10 +107,31 @@ export function validarSecuencia(
       for (const palabra of prohibidas)
         if (palabra && p.cuerpo.toLowerCase().includes(palabra.toLowerCase()))
           errores.push(`Palabra prohibida: ${palabra}`);
+      if (p.formato === "html") {
+        // `cuerpo` es la versión en texto simple (validada arriba); aquí el HTML.
+        const html = p.cuerpoHtml ?? "";
+        if (!html.trim())
+          errores.push(`Paso ${i + 1}: falta el texto con formato`);
+        else if (html.length > 20000)
+          errores.push(
+            `Paso ${i + 1}: el texto con formato admite hasta 20.000 caracteres`,
+          );
+        else
+          for (const v of ["baja", "firma"])
+            if (!html.includes(`{{${v}}}`))
+              errores.push(
+                `Paso ${i + 1}: falta {{${v}}} en el texto con formato`,
+              );
+      }
       return errores;
     }),
   ];
 }
+/** Los mismos errores con el nombre que usa el editor: «Correo 2: falta {{baja}}». */
+export const erroresDeCorreos = (s: Secuencia, prohibidas: string[] = []) =>
+  validarSecuencia(s, prohibidas).map((e) =>
+    e.replace(/^Paso (\d+):/, "Correo $1:"),
+  );
 export function parseCSV(texto: string): string[][] {
   const filas: string[][] = [];
   let fila: string[] = [];
@@ -138,4 +159,15 @@ export function parseCSV(texto: string): string[][] {
   fila.push(celda);
   if (fila.some(Boolean)) filas.push(fila);
   return filas;
+}
+/** ¿La ventana de una secuencia y el horario global tienen días y horas en común? */
+export function ventanasCompatibles(
+  a: { dias: number[]; desde: string; hasta: string },
+  b: { dias: number[]; desde: string; hasta: string },
+) {
+  return (
+    a.dias.some((d) => b.dias.includes(d)) &&
+    (a.desde > b.desde ? a.desde : b.desde) <
+      (a.hasta < b.hasta ? a.hasta : b.hasta)
+  );
 }
