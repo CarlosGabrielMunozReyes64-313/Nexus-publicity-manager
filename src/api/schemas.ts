@@ -432,6 +432,15 @@ export const resumenSchema = z.object({
 });
 export const embudoSchema = z.array(z.object({ etapa: str, conteo: num }));
 export const okSchema = z.object({ ok: z.literal(true) }).passthrough();
+/** GET /configuracion/cumplimiento: política de aprobación automática de la base legal. */
+export const cumplimientoSchema = z.object({
+  aprobacionLegalAutomatica: z.boolean(),
+});
+/** PUT /configuracion/cumplimiento: cuántos contactos pendientes se aprobaron al encenderla. */
+export const politicaAplicadaSchema = z.object({
+  ok: z.literal(true),
+  aprobadas: num.int().min(0),
+});
 /** GET /agentes/solicitudes: pedidos recientes a los agentes que proponen. */
 export const solicitudAgenteSchema = z.object({
   id,

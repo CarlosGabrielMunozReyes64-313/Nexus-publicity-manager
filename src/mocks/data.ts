@@ -788,6 +788,8 @@ export function crearDatos() {
     archivadas: {} as Record<string, string>,
     actualizadas: {} as Record<string, string>,
     pruebas: [] as { fecha: string; destinatario: string; asunto: string }[],
+    /** Política de cumplimiento (migración 0006): apagada por defecto. */
+    cumplimiento: { aprobacionLegalAutomatica: false },
     clienteIdeal: {
       criterios: [
         "MiPymes de 11 a 200 empleados",

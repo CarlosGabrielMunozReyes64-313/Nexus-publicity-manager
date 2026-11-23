@@ -53,6 +53,46 @@ function stop(c: T.Contacto, motivo: T.Inscripcion["motivoSalida"]) {
       i.proximoEnvio = undefined;
     });
 }
+/**
+ * Política de cumplimiento (como datos.aprobar_automatica del backend): con la
+ * política encendida, aprueba la base legal si el correo aparece publicado en
+ * una página con cita verificada. Nunca toca formularios, excluidos ni bases
+ * ya aprobadas.
+ */
+function aprobarAutomatica(c: T.Contacto) {
+  const b = c.baseLegal;
+  if (
+    !db.cumplimiento.aprobacionLegalAutomatica ||
+    !c.correo ||
+    c.excluido ||
+    b.aprobadaPorAdmin ||
+    b.tipo === "autorizacion_formulario"
+  )
+    return false;
+  if (b.tipo === "pendiente" || !b.texto || !b.prueba) {
+    const correo = c.correo.toLowerCase();
+    const empresa = db.empresas.find((e) => e.id === c.empresaId);
+    const fuente = [...c.evidencias, ...(empresa?.evidencias ?? [])].find(
+      (e) =>
+        ["correo", "correoCorporativo"].includes(e.campo) &&
+        e.estado === "verificado" &&
+        !!e.url &&
+        e.valor?.toLowerCase() === correo,
+    );
+    if (!fuente?.url) return false;
+    c.baseLegal = {
+      tipo: "corporativo_generico",
+      texto: `Correo de contacto publicado por ${empresa?.razonSocial ?? "la empresa"} en su sitio web (${fuente.url}). Base aprobada automáticamente por la política de cumplimiento, sin revisión manual.`,
+      prueba: `${fuente.url} — «${(fuente.cita ?? fuente.valor ?? "").slice(0, 200)}» — obtenido el ${fuente.obtenidoEn.slice(0, 10)}`,
+      fecha: iso(),
+      aprobadaPorAdmin: false,
+    };
+  }
+  c.baseLegal.aprobadaPorAdmin = true;
+  c.actualizadoEn = iso();
+  log("aprobacion_legal_automatica", "contactos", c.id, null, c.baseLegal);
+  return true;
+}
 function suppress(c: T.Contacto, motivo: string) {
   c.excluido = true;
   c.etapa = "excluido";
@@ -316,7 +356,9 @@ export async function route(request: Request): Promise<Response> {
           ? db.marca
           : id === "limites"
             ? db.limites
-            : db.clienteIdeal,
+            : id === "cumplimiento"
+              ? db.cumplimiento
+              : db.clienteIdeal,
       );
     if (resource === "descubrimiento") {
       const b = db.busquedas.find((b) => b.id === action);
@@ -546,6 +588,7 @@ export async function route(request: Request): Promise<Response> {
           log("verificar_correo", resource, id, null, {
             estadoCorreo: c.estadoCorreo,
           });
+          if (c.estadoCorreo === "valido") aprobarAutomatica(c);
         } else if (action === "base-legal") {
           if (
             c.baseLegal.tipo === "pendiente" ||
@@ -1046,6 +1089,26 @@ export async function route(request: Request): Promise<Response> {
           ok: true,
           pausadas: conflictos.map((c) => c.nombre),
         });
+      } else if (id === "cumplimiento") {
+        const p = S.cumplimientoSchema.safeParse(body);
+        if (!p.success)
+          throw new ErrorDemo(
+            "aprobacionLegalAutomatica debe ser verdadero o falso",
+          );
+        db.cumplimiento = p.data;
+        log(
+          p.data.aprobacionLegalAutomatica
+            ? "aprobacion_automatica_encendida"
+            : "aprobacion_automatica_apagada",
+          resource,
+          "cumplimiento",
+          null,
+          p.data,
+        );
+        const aprobadas = p.data.aprobacionLegalAutomatica
+          ? db.contactos.filter((c) => aprobarAutomatica(c)).length
+          : 0;
+        return HttpResponse.json({ ok: true, aprobadas });
       } else db.clienteIdeal = S.clienteIdealSchema.parse(body);
     } else if (resource === "integraciones") {
       const i = db.integraciones.find((x) => x.id === id);

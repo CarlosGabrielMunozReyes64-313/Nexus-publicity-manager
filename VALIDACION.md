@@ -7,6 +7,7 @@ Entorno de comprobación: Node 22.23.5, npm 10.9.9, Chrome for Testing 153 con P
 - **`npm run typecheck`:** TypeScript estricto, sin errores.
 - **`npm run lint`:** ESLint sin errores.
 - **`npm run format:check`:** Prettier sin diferencias.
+- **23 de noviembre de 2026, aprobación automática de la base legal:** `npm test` 100 pruebas en 12 archivos, todas correctas (3 nuevas en `src/features/configuracion/cumplimiento.test.tsx`: apagada por defecto, al encenderla aprueba solo los que tienen prueba publicada, se puede apagar sin deshacer lo aprobado, y verificar un correo con la política encendida aprueba la base). Contrato: 69 respuestas reales validadas, incluida `configuracion/cumplimiento`. Typecheck, ESLint, Prettier y compilación sin errores.
 - **`npm test`:** 95 pruebas en 10 archivos, todas correctas. Las nuevas:
   - `src/features/secuencias/editor/editor.test.tsx` (21);
   - `src/features/secuencias/lista.test.tsx` (10);

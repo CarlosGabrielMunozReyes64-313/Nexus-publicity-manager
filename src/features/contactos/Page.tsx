@@ -456,6 +456,13 @@ function ContactDetail({
             <p>{c.baseLegal.tipo}</p>
             <p>{c.baseLegal.texto ?? "Texto sin registrar"}</p>
             <p>Prueba: {c.baseLegal.prueba ?? "Pendiente"}</p>
+            {c.baseLegal.aprobadaPorAdmin &&
+              c.baseLegal.texto?.includes("aprobada automáticamente") && (
+                <p className="muted">
+                  Aprobada automáticamente por la política de cumplimiento. Si
+                  necesitas otra base, usa «Registrar evidencia legal».
+                </p>
+              )}
             <div className="row">
               <Button
                 onClick={() =>

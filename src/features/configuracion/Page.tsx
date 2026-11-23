@@ -1,6 +1,7 @@
-import { API_URL, ApiError } from "../../api/client";
+import { API_URL, ApiError, request } from "../../api/client";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import type { Marca, LimitesEnvio, Integracion } from "../../types";
 import * as S from "../../api/schemas";
@@ -250,6 +251,7 @@ export default function Page() {
       )}
       {tab === "Cumplimiento" && (
         <div className="stack">
+          <AprobacionAutomatica />
           <Resource path="/configuracion/marca" schema={S.marcaSchema}>
             {(m) => (
               <Card title="Protección de datos y bajas">
@@ -287,8 +289,8 @@ export default function Page() {
                   <Button type="submit">Guardar</Button>
                 </form>
                 <p className="notice">
-                  Base legal revisada por el administrador antes de cualquier
-                  inscripción. Las bajas y supresiones prevalecen sobre las
+                  Solo se escribe a contactos con base legal aprobada y correo
+                  verificado. Las bajas y supresiones prevalecen sobre las
                   aprobaciones.
                 </p>
               </Card>
@@ -603,5 +605,70 @@ function Limits({ initial }: { initial: LimitesEnvio }) {
         </Button>
       </form>
     </Card>
+  );
+}
+
+/** Política de cumplimiento: aprobar sola la base legal cuando el correo tiene prueba publicada. */
+function AprobacionAutomatica() {
+  const cmd = useCommand();
+  const cache = useQueryClient();
+  const cambiar = (encender: boolean) =>
+    cmd.confirm({
+      title: encender
+        ? "Encender la aprobación automática"
+        : "Apagar la aprobación automática",
+      summary: encender ? (
+        <>
+          Se aprobará la base legal de cada contacto cuyo correo aparezca
+          publicado en una página con cita verificada (tipo «corporativo
+          genérico»), ahora y cada vez que se verifique un correo nuevo.
+          Quedarás registrado como quien aprueba. Los contactos sin página
+          publicada, los de formulario y los excluidos siguen esperando tu
+          revisión.
+        </>
+      ) : (
+        "Las aprobaciones ya hechas se conservan. Los contactos nuevos volverán a esperar tu revisión."
+      ),
+      run: async () => {
+        const r = await request(
+          "/configuracion/cumplimiento",
+          S.politicaAplicadaSchema,
+          "PUT",
+          { aprobacionLegalAutomatica: encender },
+        );
+        await cache.invalidateQueries();
+        return encender
+          ? `Aprobación automática encendida. Se aprobaron ${r.aprobadas} contactos pendientes.`
+          : "Aprobación automática apagada.";
+      },
+    });
+  return (
+    <Resource path="/configuracion/cumplimiento" schema={S.cumplimientoSchema}>
+      {(p) => (
+        <Card title="Aprobación de la base legal">
+          <p>
+            <Badge tono={p.aprobacionLegalAutomatica ? "success" : undefined}>
+              {p.aprobacionLegalAutomatica ? "Automática" : "Manual"}
+            </Badge>{" "}
+            {p.aprobacionLegalAutomatica
+              ? "La evidencia (página, cita y fecha) se llena y se aprueba sola cuando el correo aparece publicado con cita verificada."
+              : "Cada base legal la registras y apruebas tú desde la ficha del contacto."}
+          </p>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={p.aprobacionLegalAutomatica}
+              onChange={(e) => cambiar(e.target.checked)}
+            />
+            Aprobar automáticamente la base legal cuando el correo tiene prueba
+            publicada
+          </label>
+          <small className="muted">
+            Siempre puedes cambiar una base desde la ficha del contacto con
+            «Registrar evidencia legal».
+          </small>
+        </Card>
+      )}
+    </Resource>
   );
 }
