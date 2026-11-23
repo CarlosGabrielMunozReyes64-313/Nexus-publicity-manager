@@ -535,6 +535,17 @@ export async function route(request: Request): Promise<Response> {
         if (action === "excluir") {
           const b = z.object({ motivo: z.string().min(3) }).parse(body);
           suppress(c, b.motivo);
+        } else if (action === "verificar-correo") {
+          if (!c.correo) throw new ErrorDemo("El contacto no tiene correo");
+          if (c.excluido)
+            throw new ErrorDemo("El contacto está excluido o anonimizado", 409);
+          // La demo simula al verificador: un correo bien formado sale «valido».
+          c.estadoCorreo = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.correo)
+            ? "valido"
+            : "invalido";
+          log("verificar_correo", resource, id, null, {
+            estadoCorreo: c.estadoCorreo,
+          });
         } else if (action === "base-legal") {
           if (
             c.baseLegal.tipo === "pendiente" ||

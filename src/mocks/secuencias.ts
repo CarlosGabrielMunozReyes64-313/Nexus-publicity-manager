@@ -54,7 +54,7 @@ export const ARCHIVADA = "La secuencia está archivada";
 export const VENTANA_GLOBAL =
   "La ventana de envío de la secuencia no coincide con el horario global (Configuración → Límites y horarios)";
 const SIN_ELEGIBLES =
-  "El segmento no tiene contactos elegibles con base legal aprobada";
+  "El segmento no tiene contactos elegibles: cada contacto necesita base legal aprobada y un correo verificado como válido";
 const VIGENTE = ["aprobada", "activa", "pausada", "finalizada"];
 
 const iso = (ms = 0) => new Date(Date.now() + ms).toISOString();

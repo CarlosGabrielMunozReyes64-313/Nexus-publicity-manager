@@ -412,6 +412,22 @@ function ContactDetail({
             <p>
               {c.correo} · <Badge>{c.estadoCorreo}</Badge>
             </p>
+            {c.correo && c.estadoCorreo !== "valido" && !c.excluido && (
+              <p className="muted">
+                Solo se escribe a correos verificados como válidos.{" "}
+                <Button
+                  onClick={() =>
+                    cmd.ask(
+                      "Verificar correo",
+                      "Se consultará el verificador (DNS y Hunter) para este correo. Consume una verificación de Hunter; el estado se actualiza en unos segundos.",
+                      `/contactos/${c.id}/verificar-correo`,
+                    )
+                  }
+                >
+                  Verificar correo
+                </Button>
+              </p>
+            )}
             <Button
               variant="danger"
               disabled={c.excluido}

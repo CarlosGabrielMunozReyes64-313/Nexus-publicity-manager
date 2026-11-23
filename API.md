@@ -151,3 +151,11 @@ Texto con formato:
 - El texto simple se genera solo y va en `cuerpo`.
 - El motor envía `multipart/alternative`.
 - El HTML nunca se inserta en la página: la vista previa va en un `iframe` con `sandbox` vacío.
+
+## Contactos: verificar el correo
+
+| Método | Ruta                              | Cuerpo | Respuesta                                                                                                                                                              |
+| ------ | --------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/contactos/:id/verificar-correo` | `{}`   | `{ok:true}`. Encola la verificación (DNS + Hunter); el estado del correo cambia cuando termina. 400 «El contacto no tiene correo», 409 si está excluido o anonimizado. |
+
+Solo los correos `valido` son elegibles. Al conectar el verificador (Hunter) también se verifican todos los correos que estaban en `desconocido`.
