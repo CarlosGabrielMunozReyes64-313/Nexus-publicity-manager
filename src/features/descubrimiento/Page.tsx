@@ -13,6 +13,13 @@ import { MultiSelect } from "../../components/ui/MultiSelect";
 import { Intro, useCommand } from "../shared";
 import { MUNICIPIOS, SECTORES, TIPOS_EMPRESA, armarConsulta } from "./opciones";
 import { MODO_DEMO } from "../../lib/modo";
+import type { z } from "zod";
+import { MetaDiaria, combinacionesDe, type Filtros } from "./MetaDiaria";
+import st from "./Descubrimiento.module.css";
+
+type Resultado = z.infer<typeof S.resultadoSchema>;
+/** Más combinaciones que esto en una sola búsqueda ya rinde poco (lee como mucho 8 páginas). */
+const COMBINACIONES_POR_BUSQUEDA = 4;
 
 export default function Page() {
   const q = useResource("/descubrimiento/busquedas", S.busquedaSchema.array());
@@ -24,6 +31,15 @@ export default function Page() {
   const [sectores, setSectores] = useState<string[]>([]);
   const [tamano, setTamano] = useState("");
   const cmd = useCommand();
+  const filtros: Filtros = { tipos, municipios, sectores, tamano };
+  const combos = combinacionesDe(filtros);
+  const grande = combos > COMBINACIONES_POR_BUSQUEDA;
+  const cargar = (f: Filtros) => {
+    setTipos(f.tipos);
+    setMunicipios(f.municipios);
+    setSectores(f.sectores);
+    setTamano(f.tamano);
+  };
   const activa = q.data?.some(
     (b) => b.estado === "ejecutando" || b.estado === "en_cola",
   );
@@ -62,6 +78,9 @@ export default function Page() {
                 </p>
               ) : (
                 <>
+                  {grande && (
+                    <AvisoGrande tipos={tipos} municipios={municipios} />
+                  )}
                   <p>
                     El agente de IA configurado en el servidor buscará en
                     fuentes web públicas y comprobará cada cita en el sitio
@@ -146,13 +165,23 @@ export default function Page() {
             el tuyo.
           </small>
         )}
+        {grande && <AvisoGrande tipos={tipos} municipios={municipios} />}
       </Card>
+      <div style={{ marginTop: 20 }}>
+        <MetaDiaria filtros={filtros} cargar={cargar} />
+      </div>
       <div className="stack" style={{ marginTop: 20 }}>
         <QueryState loading={q.isPending} error={q.error} retry={q.refetch}>
           {q.data?.map((b) => (
             <Card key={b.id} title={b.criterios.consulta}>
               <p>
                 <Badge>{b.estado}</Badge>
+                {b.meta && (
+                  <>
+                    {" "}
+                    <Badge tono="info">Meta diaria</Badge>
+                  </>
+                )}
                 {b.criterios.municipios.length > 0 &&
                   ` · ${b.criterios.municipios.join(", ")}`}
                 {b.criterios.sectores.length > 0 &&
@@ -189,77 +218,136 @@ export default function Page() {
                   y, si publica un correo corporativo, su contacto.
                 </p>
               )}
-              <div className="grid" style={{ marginTop: 20 }}>
-                {b.resultados.map((r) => (
-                  <Card key={r.id} title={r.empresa.razonSocial}>
-                    <Badge>{r.estado}</Badge>
-                    <p>
-                      {r.empresa.municipio} · {r.empresa.sector}
-                    </p>
-                    <p>
-                      {r.empresa.sitioWeb}
-                      <br />
-                      {r.contactoCorporativo.correo}
-                      <br />
-                      Tel. {r.contactoCorporativo.telefono} · WhatsApp{" "}
-                      {r.contactoCorporativo.whatsapp}
-                    </p>
-                    <small>
-                      Formulario: {r.contactoCorporativo.formularioUrl}
-                    </small>
-                    <EvidenceList items={r.evidencias} />
-                    {r.personas.map((p, i) => (
-                      <p key={i}>
-                        {p.nombre} · {p.cargo}{" "}
-                        <Badge>Requiere base legal</Badge>
-                      </p>
-                    ))}
-                    {r.posibleDuplicadoDe && (
-                      <p className="notice warning">
-                        Posible duplicado.{" "}
-                        <Link to={`/empresas/${r.posibleDuplicadoDe}`}>
-                          Revisar empresa existente
-                        </Link>
-                      </p>
-                    )}
-                    <div className="row">
-                      <Button
-                        disabled={
-                          r.estado !== "pendiente" || !!r.posibleDuplicadoDe
-                        }
-                        variant="primary"
-                        onClick={() =>
-                          cmd.ask(
-                            "Aceptar resultado",
-                            r.contactoCorporativo.correo
-                              ? `Se creará ${r.empresa.razonSocial} y un contacto corporativo (${r.contactoCorporativo.correo}) sin base legal aprobada ni correo verificado.`
-                              : `Se creará ${r.empresa.razonSocial} con sus evidencias. No hay correo corporativo publicado, así que no se crea ningún contacto.`,
-                            `/descubrimiento/resultados/${r.id}/aceptar`,
-                          )
-                        }
-                      >
-                        Aceptar
-                      </Button>
-                      <Button
-                        disabled={r.estado !== "pendiente"}
-                        onClick={() =>
-                          cmd.ask(
-                            "Descartar resultado",
-                            "El resultado quedará descartado.",
-                            `/descubrimiento/resultados/${r.id}/descartar`,
-                          )
-                        }
-                      >
-                        Descartar
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+              {b.resultados.length > 0 && (
+                <ul
+                  className={st.lista}
+                  aria-label={`Resultados de ${b.criterios.consulta}`}
+                >
+                  {b.resultados.map((r) => (
+                    <FilaResultado key={r.id} r={r} />
+                  ))}
+                </ul>
+              )}
             </Card>
           ))}
         </QueryState>
       </div>
     </>
+  );
+}
+
+function AvisoGrande({
+  tipos,
+  municipios,
+}: {
+  tipos: string[];
+  municipios: string[];
+}) {
+  return (
+    <p className="notice warning">
+      Eligió {tipos.length} tipo{tipos.length === 1 ? "" : "s"} y{" "}
+      {municipios.length || "ningún"} municipio
+      {municipios.length === 1 ? "" : "s"}. Una búsqueda lee como máximo 8
+      páginas, así que encontrará pocas empresas de cada uno. Para cubrirlos
+      todos, use la meta de contactos diarios: busca un tipo y un municipio a la
+      vez.
+    </p>
+  );
+}
+
+/** Un resultado en una fila de la lista: datos, evidencia y decisión. */
+function FilaResultado({ r }: { r: Resultado }) {
+  const cmd = useCommand();
+  const ct = r.contactoCorporativo;
+  const lugar = [r.empresa.municipio, r.empresa.sector]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <li className={st.fila} data-estado={r.estado}>
+      <div>
+        <div className={st.encabezado}>
+          <span className={st.nombre}>{r.empresa.razonSocial}</span>
+          <Badge>{r.estado}</Badge>
+          {r.posibleDuplicadoDe && (
+            <Badge tono="warning">Posible duplicado</Badge>
+          )}
+        </div>
+        <div className={st.datos}>
+          {lugar && <span>{lugar}</span>}
+          {r.empresa.sitioWeb && (
+            <a
+              href={r.empresa.sitioWeb}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              {r.empresa.sitioWeb
+                .replace(/^https?:\/\//, "")
+                .replace(/\/$/, "")}
+            </a>
+          )}
+          {ct.correo && <span>{ct.correo}</span>}
+          {ct.telefono && <span>Tel. {ct.telefono}</span>}
+          {ct.whatsapp && <span>WhatsApp {ct.whatsapp}</span>}
+          {ct.formularioUrl && (
+            <a
+              href={ct.formularioUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Formulario de contacto
+            </a>
+          )}
+        </div>
+        {r.evidencias.length > 0 && (
+          <div className={st.evidencia}>
+            <EvidenceList items={r.evidencias} />
+          </div>
+        )}
+        {r.personas.map((p, i) => (
+          <p key={i}>
+            {p.nombre} · {p.cargo} <Badge>Requiere base legal</Badge>
+          </p>
+        ))}
+      </div>
+      {r.estado === "pendiente" && (
+        <div className={st.acciones}>
+          <Button
+            disabled={r.estado !== "pendiente" || !!r.posibleDuplicadoDe}
+            variant="primary"
+            onClick={() =>
+              cmd.ask(
+                "Aceptar resultado",
+                ct.correo
+                  ? `Se creará ${r.empresa.razonSocial} y un contacto corporativo (${ct.correo}) sin base legal aprobada ni correo verificado.`
+                  : `Se creará ${r.empresa.razonSocial} con sus evidencias. No hay correo corporativo publicado, así que no se crea ningún contacto.`,
+                `/descubrimiento/resultados/${r.id}/aceptar`,
+              )
+            }
+          >
+            Aceptar
+          </Button>
+          <Button
+            disabled={r.estado !== "pendiente"}
+            onClick={() =>
+              cmd.ask(
+                "Descartar resultado",
+                "El resultado quedará descartado.",
+                `/descubrimiento/resultados/${r.id}/descartar`,
+              )
+            }
+          >
+            Descartar
+          </Button>
+        </div>
+      )}
+      {r.posibleDuplicadoDe && (
+        <p className={`notice warning ${st.aviso}`}>
+          Posible duplicado.{" "}
+          <Link to={`/empresas/${r.posibleDuplicadoDe}`}>
+            Revisar empresa existente
+          </Link>
+        </p>
+      )}
+    </li>
   );
 }

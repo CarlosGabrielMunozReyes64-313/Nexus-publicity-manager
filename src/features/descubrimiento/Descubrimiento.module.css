@@ -1,0 +1,102 @@
+/* Resultados en lista (antes, mosaico de tarjetas). */
+.lista {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  border: 1px solid #dfe9e4;
+  border-radius: 8px;
+  background: white;
+}
+.fila {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 20px;
+  align-items: start;
+  padding: 14px 16px;
+}
+.fila + .fila {
+  border-top: 1px solid #e6eeea;
+}
+.fila[data-estado="descartado"] {
+  opacity: 0.6;
+}
+.encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.nombre {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--nx-dark);
+}
+.datos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 6px 0 0;
+  color: var(--nx-text);
+  font-size: 0.92rem;
+}
+.datos a {
+  overflow-wrap: anywhere;
+}
+.evidencia {
+  margin-top: 8px;
+  font-size: 0.88rem;
+}
+.evidencia :global(.stack) {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+.evidencia :global(.row) {
+  gap: 6px;
+}
+.acciones {
+  display: flex;
+  gap: 8px;
+}
+.aviso {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+@media (max-width: 700px) {
+  .fila {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Meta de contactos diarios */
+.metaFila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+.metaFila input[type="number"] {
+  width: 110px;
+}
+.interruptor {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  min-height: 41px;
+}
+.avance {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+.avance progress {
+  width: 100%;
+}
+.cifras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-weight: 600;
+}

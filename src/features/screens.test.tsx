@@ -15,6 +15,8 @@ import Embudo from "./embudo/Page";
 import Informes from "./informes/Page";
 import Configuracion from "./configuracion/Page";
 import Auditoria from "./auditoria/Page";
+import Descubrimiento from "./descubrimiento/Page";
+import Terminal from "./terminal/Page";
 vi.mock("react-chartjs-2", () => ({
   Line: () => <div aria-label="Gráfico de línea" />,
   Bar: () => <div aria-label="Gráfico de barras" />,
@@ -46,6 +48,8 @@ it.each([
   ["/informes", Informes, "Informes"],
   ["/configuracion", Configuracion, "Configuración"],
   ["/auditoria", Auditoria, "Registro de acciones"],
+  ["/descubrimiento", Descubrimiento, "Descubrimiento"],
+  ["/terminal", Terminal, "Terminal"],
 ])("renderiza %s con datos validados", async (path, Page, title) => {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },

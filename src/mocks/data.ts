@@ -790,6 +790,41 @@ export function crearDatos() {
     pruebas: [] as { fecha: string; destinatario: string; asunto: string }[],
     /** Política de cumplimiento (migración 0006): apagada por defecto. */
     cumplimiento: { aprobacionLegalAutomatica: false },
+    /** Meta diaria de Descubrimiento (migración 0007): apagada por defecto. */
+    metaDescubrimiento: {
+      activa: false,
+      metaDiaria: 20,
+      maxBusquedas: 40,
+      tipos: [] as string[],
+      municipios: [] as string[],
+      sectores: [] as string[],
+      tamano: "",
+    },
+    /** Bitácora de la Terminal (en el servidor la escribe el trabajador). */
+    terminal: [
+      ["info", "Modo demostración: estas líneas son de ejemplo."],
+      ["info", "Calcular puntajes: empieza."],
+      ["exito", "Calcular puntajes: listo en 2 s."],
+      [
+        "info",
+        "Búsqueda de empresas: «Procesadoras de alimentos» en Palmira: empieza.",
+      ],
+      ["info", "Búsqueda en la web (Tavily): 4 consultas, 8 páginas leídas."],
+      [
+        "aviso",
+        "Búsqueda de empresas: «Procesadoras de alimentos» en Palmira: Gemini está saturado o no disponible temporalmente (503). Intento 1 de 10; nuevo intento a las 11:28.",
+      ],
+      [
+        "info",
+        "Se reutilizan 8 páginas del intento anterior; no se vuelve a buscar en la web.",
+      ],
+      ["exito", "Búsqueda terminada: 2 empresas comprobadas."],
+    ].map(([nivel, mensaje], i) => ({
+      id: i + 1,
+      fecha: new Date(Date.now() - (8 - i) * 60_000).toISOString(),
+      nivel: nivel as "info" | "exito" | "aviso" | "error",
+      mensaje,
+    })),
     clienteIdeal: {
       criterios: [
         "MiPymes de 11 a 200 empleados",

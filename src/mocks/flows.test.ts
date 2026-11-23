@@ -170,6 +170,28 @@ describe("Flujos del contrato mock", () => {
     S.auditoriaSchema.array().parse(db.auditoria);
     expect(db.metricas).toHaveLength(90);
   });
+
+  it("la meta diaria y la terminal de la demo cumplen sus esquemas", async () => {
+    const leer = async (path: string) => (await call(path)).json();
+    S.metaDescubrimientoSchema.parse(await leer("/descubrimiento/meta"));
+    const t = S.terminalSchema.parse(await leer("/terminal"));
+    expect(t.eventos.length).toBeGreaterThan(0);
+    const ultimo = t.eventos[t.eventos.length - 1].id;
+    expect(
+      S.terminalSchema.parse(await leer(`/terminal?desde=${ultimo}`)).eventos,
+    ).toEqual([]);
+    await call("/descubrimiento/busquedas", "POST", {
+      consulta: "Busca empresas en Colombia: Hoteles",
+      municipios: ["Palmira"],
+      sectores: [],
+    });
+    const nuevas = S.terminalSchema.parse(
+      await leer(`/terminal?desde=${ultimo}`),
+    ).eventos;
+    expect(nuevas.map((e) => e.mensaje)).toEqual([
+      "Búsqueda de empresas: «Hoteles» en Palmira: empieza.",
+    ]);
+  });
 });
 
 describe("Escenario de la demo: secuencia de correo de punta a punta", () => {

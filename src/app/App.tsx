@@ -23,6 +23,7 @@ import {
   BarChart3,
   Settings,
   History,
+  SquareTerminal,
   Search,
   LogOut,
   ShieldCheck,
@@ -46,6 +47,7 @@ const pages = {
   informes: lazy(() => import("../features/informes/Page")),
   configuracion: lazy(() => import("../features/configuracion/Page")),
   auditoria: lazy(() => import("../features/auditoria/Page")),
+  terminal: lazy(() => import("../features/terminal/Page")),
 };
 const nav: {
   group: string;
@@ -81,6 +83,7 @@ const nav: {
     items: [
       ["configuracion", "Configuración", Settings],
       ["auditoria", "Registro de acciones", History],
+      ["terminal", "Terminal", SquareTerminal],
     ],
   },
 ];

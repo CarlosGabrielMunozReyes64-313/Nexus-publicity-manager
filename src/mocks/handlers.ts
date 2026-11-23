@@ -93,6 +93,94 @@ function aprobarAutomatica(c: T.Contacto) {
   log("aprobacion_legal_automatica", "contactos", c.id, null, c.baseLegal);
   return true;
 }
+/** Línea de la Terminal en la demostración (en el servidor la escribe el trabajador). */
+function anotarDemo(
+  nivel: "info" | "exito" | "aviso" | "error",
+  mensaje: string,
+) {
+  db.terminal.push({
+    id: (db.terminal.at(-1)?.id ?? 0) + 1,
+    fecha: iso(),
+    nivel,
+    mensaje,
+  });
+}
+function describirBusqueda(c: { consulta: string; municipios: string[] }) {
+  const consulta =
+    c.consulta.split(":").slice(1).join(":").trim() || c.consulta;
+  const lugar = c.municipios.length
+    ? ` en ${c.municipios.slice(0, 3).join(", ")}${c.municipios.length > 3 ? ` y ${c.municipios.length - 3} más` : ""}`
+    : "";
+  return `Búsqueda de empresas: «${consulta.length > 70 ? consulta.slice(0, 69) + "…" : consulta}»${lugar}`;
+}
+const hoyBogota = (fecha: string) =>
+  new Date(fecha).toLocaleDateString("es-CO", { timeZone: "America/Bogota" });
+/** GET /descubrimiento/meta en la demo: la meta no lanza búsquedas reales. */
+function metaDemo() {
+  const m = db.metaDescubrimiento;
+  const hoy = hoyBogota(iso());
+  return {
+    ...m,
+    hoy: {
+      contactos: db.contactos.filter(
+        (c) => c.origen === "descubrimiento" && hoyBogota(c.creadoEn) === hoy,
+      ).length,
+      busquedas: 0,
+      enCurso: false,
+    },
+    combinaciones: m.tipos.length * Math.max(1, m.municipios.length),
+    creditosPorBusqueda: 4,
+    estado: m.activa
+      ? "Modo demostración: la meta está encendida, pero aquí no se lanzan búsquedas reales. En el servidor buscaría sola cada día."
+      : "Apagada. Solo se busca cuando usted inicia una búsqueda.",
+  };
+}
+/** PUT /descubrimiento/meta con las mismas reglas que el backend. */
+function guardarMetaDemo(body: unknown) {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const entero = (campo: string, min: number, max: number) => {
+    const v = b[campo];
+    if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max)
+      throw new ErrorDemo(
+        `«${campo}» debe ser un número entero entre ${min} y ${max}`,
+      );
+    return v;
+  };
+  const lista = (campo: string) => {
+    const v = b[campo] ?? [];
+    if (!Array.isArray(v) || !v.every((x) => typeof x === "string" && x.trim()))
+      throw new ErrorDemo(`«${campo}» debe ser una lista de textos`);
+    return [...new Set(v.map((x: string) => x.trim()))];
+  };
+  if (typeof b.activa !== "boolean")
+    throw new ErrorDemo("Indique si la meta queda encendida (sí o no)");
+  const tamano = typeof b.tamano === "string" ? b.tamano : "";
+  if (!["", "1-10", "11-50", "51-200", "200+"].includes(tamano))
+    throw new ErrorDemo("Tamaño no válido");
+  const meta = {
+    activa: b.activa,
+    metaDiaria: entero("metaDiaria", 1, 200),
+    maxBusquedas: entero("maxBusquedas", 1, 500),
+    tipos: lista("tipos"),
+    municipios: lista("municipios"),
+    sectores: lista("sectores"),
+    tamano,
+  };
+  if (meta.activa && !meta.tipos.length)
+    throw new ErrorDemo(
+      "Elija al menos un tipo de empresa para buscar cada día",
+    );
+  db.metaDescubrimiento = meta;
+  log(
+    meta.activa
+      ? "meta_descubrimiento_encendida"
+      : "meta_descubrimiento_guardada",
+    "configuracion",
+    "descubrimiento",
+    null,
+    meta,
+  );
+}
 function suppress(c: T.Contacto, motivo: string) {
   c.excluido = true;
   c.etapa = "excluido";
@@ -360,6 +448,29 @@ export async function route(request: Request): Promise<Response> {
               ? db.cumplimiento
               : db.clienteIdeal,
       );
+    if (path === "/descubrimiento/meta") return HttpResponse.json(metaDemo());
+    if (path === "/terminal") {
+      const desde = Number(u.searchParams.get("desde") ?? 0) || 0;
+      const enCurso = db.busquedas.filter((b) => b.estado === "ejecutando");
+      return HttpResponse.json({
+        trabajador: { activo: true, vistoEn: iso() },
+        cola: {
+          enProceso: enCurso.length,
+          enCola: 0,
+          esperando: 0,
+          fallidas24h: 0,
+        },
+        ahoraMismo: enCurso.map((b) => ({
+          tareaId: b.id,
+          descripcion: describirBusqueda(b.criterios),
+          estado: "en_proceso",
+          desde: b.creadaEn,
+          intento: 1,
+          maxIntentos: 4,
+        })),
+        eventos: db.terminal.filter((e) => e.id > desde).slice(-300),
+      });
+    }
     if (resource === "descubrimiento") {
       const b = db.busquedas.find((b) => b.id === action);
       return HttpResponse.json(action ? b : db.busquedas);
@@ -647,8 +758,12 @@ export async function route(request: Request): Promise<Response> {
       db.empresas = db.empresas.filter((e) => e.id !== b.id);
       db.duplicados = db.duplicados.filter((d) => d.id !== id);
     } else if (resource === "descubrimiento") {
-      if (id === "busquedas") {
+      if (id === "meta") {
+        guardarMetaDemo(body);
+      } else if (id === "busquedas") {
         const criterios = S.busquedaSchema.shape.criterios.parse(body);
+        const inicio = Date.now();
+        anotarDemo("info", `${describirBusqueda(criterios)}: empieza.`);
         const b: T.BusquedaDescubrimiento = {
           id: uid(),
           criterios,
@@ -659,6 +774,10 @@ export async function route(request: Request): Promise<Response> {
         };
         db.busquedas.unshift(b);
         setTimeout(() => {
+          anotarDemo(
+            "exito",
+            `${describirBusqueda(criterios)}: listo en ${Math.round((Date.now() - inicio) / 1000)} s.`,
+          );
           b.estado = "terminada";
           b.progreso = 100;
           b.resultados = [

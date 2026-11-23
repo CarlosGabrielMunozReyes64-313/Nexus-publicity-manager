@@ -339,6 +339,8 @@ export interface BusquedaDescubrimiento {
   error?: string; // motivo de fallo, reintento o búsqueda sin resultados
   resultados: ResultadoDescubrimiento[];
   creadaEn: string;
+  /** Solo en las búsquedas que lanzó la meta diaria. */
+  meta?: true;
 }
 
 export interface Supresion {

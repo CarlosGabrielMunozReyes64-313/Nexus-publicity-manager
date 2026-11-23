@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Minus, Plus, X } from "lucide-react";
 import s from "./MultiSelect.module.css";
 
 export interface OptionGroup {
@@ -98,6 +98,19 @@ export function MultiSelect({
   }, [adding]);
 
   const selected = new Set(value.map(norm));
+  // «Marcar todas» actúa sobre lo que se ve: con un filtro escrito, solo sobre lo filtrado.
+  const visibles = visible.flatMap((g) => g.options);
+  const todas =
+    visibles.length > 0 && visibles.every((o) => selected.has(norm(o)));
+  const algunas = !todas && visibles.some((o) => selected.has(norm(o)));
+  const marcarTodas = (on: boolean) => {
+    const vis = new Set(visibles.map(norm));
+    onChange(
+      on
+        ? [...value, ...visibles.filter((o) => !selected.has(norm(o)))]
+        : value.filter((v) => !vis.has(norm(v))),
+    );
+  };
   const toggle = (opt: string) =>
     onChange(
       selected.has(norm(opt))
@@ -187,6 +200,26 @@ export function MultiSelect({
                 </button>
               )}
             </div>
+            {visibles.length > 0 && (
+              <label className={`${s.option} ${s.todas}`}>
+                <input
+                  type="checkbox"
+                  checked={todas}
+                  aria-checked={algunas ? "mixed" : todas}
+                  onChange={(e) => marcarTodas(e.target.checked)}
+                />
+                <span className={s.box} aria-hidden data-mixta={algunas}>
+                  {todas && <Check size={12} strokeWidth={3} />}
+                  {algunas && <Minus size={12} strokeWidth={3} />}
+                </span>
+                <span>
+                  Marcar todas las casillas
+                  {filter.trim() && (
+                    <small className={s.cuantas}> ({visibles.length})</small>
+                  )}
+                </span>
+              </label>
+            )}
             <div
               className={s.list}
               id={listId}

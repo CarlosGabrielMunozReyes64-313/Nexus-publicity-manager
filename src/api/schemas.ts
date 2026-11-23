@@ -313,6 +313,55 @@ export const busquedaSchema = z.object({
   error: str.optional(),
   resultados: z.array(resultadoSchema),
   creadaEn: str,
+  /** Solo en las búsquedas que lanzó la meta diaria. */
+  meta: z.literal(true).optional(),
+});
+/** GET /descubrimiento/meta: meta diaria de contactos, filtros guardados y avance de hoy. */
+export const metaDescubrimientoSchema = z.object({
+  activa: z.boolean(),
+  metaDiaria: num.int().min(1),
+  maxBusquedas: num.int().min(1),
+  tipos: z.array(str),
+  municipios: z.array(str),
+  sectores: z.array(str),
+  tamano: z.string(),
+  hoy: z.object({
+    contactos: num.int().min(0),
+    busquedas: num.int().min(0),
+    enCurso: z.boolean(),
+  }),
+  combinaciones: num.int().min(0),
+  creditosPorBusqueda: num.int().min(0),
+  estado: str,
+});
+export const nivelEventoSchema = z.enum(["info", "exito", "aviso", "error"]);
+/** GET /terminal: trabajador, cola y líneas nuevas de la bitácora (sin datos personales). */
+export const terminalSchema = z.object({
+  trabajador: z.object({ activo: z.boolean(), vistoEn: str.optional() }),
+  cola: z.object({
+    enProceso: num.int().min(0),
+    enCola: num.int().min(0),
+    esperando: num.int().min(0),
+    fallidas24h: num.int().min(0),
+  }),
+  ahoraMismo: z.array(
+    z.object({
+      tareaId: id,
+      descripcion: str,
+      estado: z.enum(["en_proceso", "en_cola", "esperando"]),
+      desde: str,
+      intento: num.int().min(0),
+      maxIntentos: num.int().min(1),
+    }),
+  ),
+  eventos: z.array(
+    z.object({
+      id: num.int().min(1),
+      fecha: str,
+      nivel: nivelEventoSchema,
+      mensaje: str,
+    }),
+  ),
 });
 export const supresionSchema = z.object({
   id,

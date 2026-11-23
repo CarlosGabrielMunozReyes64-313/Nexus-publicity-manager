@@ -216,3 +216,21 @@
 .chip button:hover {
   background: #cfe6da;
 }
+.todas {
+  display: flex;
+  border-bottom: 1px solid #e3ece8;
+  border-radius: 0;
+  font-weight: 600;
+  padding-bottom: 9px;
+}
+.todas:hover {
+  background: var(--nx-light);
+}
+.box[data-mixta="true"] {
+  background: var(--nx-dark);
+  border-color: var(--nx-dark);
+}
+.cuantas {
+  color: var(--nx-muted);
+  font-weight: 500;
+}
