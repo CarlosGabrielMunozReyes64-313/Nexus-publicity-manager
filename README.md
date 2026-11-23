@@ -49,11 +49,14 @@ Genera `dist/` (TypeScript estricto + Vite). Las variables `VITE_*` se fijan en 
 
 ## Desplegar en Vercel
 
-`vercel.ts` reemplaza al antiguo `vercel.json` y **no contiene ninguna dirección fija**. El destino del backend se define por entorno:
+`vercel.json` es estático y **no contiene ninguna dirección fija**. Sus reescrituras usan `$NEXUS_BACKEND_URL`, que Vercel sustituye en cada petición con el valor de la variable del despliegue (propiedad `env` de cada reescritura). Así, cada entorno llega a su propio backend.
 
 1. Vercel → Settings → Environment Variables:
    - `NEXUS_BACKEND_URL` = `https://su-backend-de-produccion…` solo para **Production**.
    - `NEXUS_BACKEND_URL` = `https://su-backend-de-pruebas…` solo para **Preview**.
+   - Escríbala sin barra final ni espacios.
+   - **No la marque como «Sensitive»**: Vercel no pasa el valor de una variable sensible a las reescrituras, y cada llamada a `/api` fallaría. No es un secreto, porque es la dirección pública del backend.
+   - Si cambia la variable, vuelva a desplegar: el valor queda fijo en cada despliegue.
    - No defina `VITE_USE_MOCKS=true` en producción ni cambie `VITE_API_URL` (debe quedar vacía o en `/api`).
 2. Despliegue. El comando `npm run build:vercel` comprueba la variable y que `NEXUS_BACKEND_URL/health` responda antes de compilar; si algo falta, el despliegue se detiene en lugar de apuntar a otro servidor. Solo si el backend aún no está publicado puede definir `NEXUS_OMITIR_VERIFICACION=1`.
 3. Tras desplegar, verifique las rutas: `npm run verificar:despliegue -- https://su-app.vercel.app` (salud, API, bajas, seguimiento y carga de la aplicación).
@@ -99,6 +102,6 @@ npm run verificar:despliegue -- https://su-app.vercel.app
 - `src/features`: pantallas.
 - `src/lib`: reglas puras, CSV, fechas de Bogotá y modo activo.
 - `scripts`: verificación de despliegue y validación del contrato con respuestas reales.
-- `vercel.ts`: rutas de Vercel por entorno.
+- `vercel.json`: rutas de Vercel; el backend sale de `NEXUS_BACKEND_URL` de cada despliegue.
 
 Ver `DECISIONES.md` y `VALIDACION.md`.

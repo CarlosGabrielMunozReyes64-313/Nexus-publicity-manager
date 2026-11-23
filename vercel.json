@@ -1,0 +1,47 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build:vercel",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "$NEXUS_BACKEND_URL/api/:path*",
+      "env": ["NEXUS_BACKEND_URL"],
+      "respectOriginCacheControl": false
+    },
+    {
+      "source": "/health",
+      "destination": "$NEXUS_BACKEND_URL/health",
+      "env": ["NEXUS_BACKEND_URL"],
+      "respectOriginCacheControl": false
+    },
+    {
+      "source": "/baja/:path*",
+      "destination": "$NEXUS_BACKEND_URL/baja/:path*",
+      "env": ["NEXUS_BACKEND_URL"],
+      "respectOriginCacheControl": false
+    },
+    {
+      "source": "/r/:path*",
+      "destination": "$NEXUS_BACKEND_URL/r/:path*",
+      "env": ["NEXUS_BACKEND_URL"],
+      "respectOriginCacheControl": false
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ]
+}

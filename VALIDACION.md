@@ -7,7 +7,7 @@ Entorno de comprobación: Node 22.23.5, npm 10.9.9, Chrome for Testing 153 con P
 - **`npm run typecheck`:** TypeScript estricto, sin errores.
 - **`npm run lint`:** ESLint sin errores.
 - **`npm run format:check`:** Prettier sin diferencias.
-- **`npm test`:** 94 pruebas en 10 archivos, todas correctas. Las nuevas:
+- **`npm test`:** 95 pruebas en 10 archivos, todas correctas. Las nuevas:
   - `src/features/secuencias/editor/editor.test.tsx` (21);
   - `src/features/secuencias/lista.test.tsx` (10);
   - `src/features/sin-propuestas.test.tsx` (5);
@@ -19,6 +19,7 @@ Entorno de comprobación: Node 22.23.5, npm 10.9.9, Chrome for Testing 153 con P
 - **Modo demostración en Chrome:** lista, editor, texto con formato (negrita, listas, variables, vista previa aislada) y «Mejorar con IA», sin errores en la consola.
 - **Celular (390 px):** la lista y el editor se leen sin desplazamiento horizontal.
 - **Navegador real:** las 13 pantallas con la API real; `/propuestas` lleva a `/secuencias`.
+- **Despliegue en Vercel:** `vercel.json` pasa el esquema y el normalizador de rutas oficiales de Vercel (`@vercel/routing-utils` 6.6.1). Las reescrituras al backend usan `$NEXUS_BACKEND_URL`, sin direcciones fijas. `npm run build:vercel` se detiene si la variable falta, trae barra final o espacios, no es https o lleva una ruta. No se pudo desplegar en Vercel desde aquí: confírmelo con el siguiente despliegue y `npm run verificar:despliegue`.
 - **Arranque desde los ZIP:** `scripts/probar_arranque.py` del backend ejecuta `npm ci`, `npm test` y `npm run build` sobre la copia extraída.
 
 ## Cobertura nueva

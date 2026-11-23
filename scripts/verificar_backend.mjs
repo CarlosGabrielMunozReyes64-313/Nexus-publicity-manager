@@ -1,15 +1,15 @@
 // Verificación previa al despliegue en Vercel (npm run build:vercel).
 // Comprueba la variable del entorno, el modo de la compilación y que el backend
 // de ESTE entorno responda antes de publicar el frontend.
-const destino = (process.env.NEXUS_BACKEND_URL ?? "")
-  .trim()
-  .replace(/\/+$/, "");
+// vercel.json usa este valor tal cual en cada petición ($NEXUS_BACKEND_URL/api/…), así que
+// aquí no se corrige: una barra final o un espacio romperían las rutas en producción.
+const destino = process.env.NEXUS_BACKEND_URL ?? "";
 const entorno = process.env.VERCEL_ENV ?? "local";
 const errores = [];
 
 if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(destino))
   errores.push(
-    "NEXUS_BACKEND_URL debe ser una URL https sin ruta (p. ej. https://mi-backend.up.railway.app).",
+    "NEXUS_BACKEND_URL debe ser una URL https sin ruta, sin barra final ni espacios (p. ej. https://mi-backend.up.railway.app).",
   );
 if (process.env.VITE_USE_MOCKS === "true" && entorno === "production")
   errores.push(
