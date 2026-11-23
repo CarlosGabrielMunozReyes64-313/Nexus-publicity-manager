@@ -5,12 +5,49 @@
 // aquí no se corrige: una barra final o un espacio romperían las rutas en producción.
 const destino = process.env.NEXUS_BACKEND_URL ?? "";
 const entorno = process.env.VERCEL_ENV ?? "local";
+const NOMBRES = { production: "Production", preview: "Preview" };
 const errores = [];
 
-if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(destino))
-  errores.push(
-    "NEXUS_BACKEND_URL debe ser una URL https sin ruta, sin barra final ni espacios (p. ej. https://mi-backend.up.railway.app).",
-  );
+/** Explica qué tiene mal el valor y cuál es el valor correcto para pegar en Vercel. */
+function problemasDelDestino(valor) {
+  if (!valor.trim())
+    return [
+      `NEXUS_BACKEND_URL no está definida para ${NOMBRES[entorno] ?? entorno}. ` +
+        "Agréguela en Vercel → Settings → Environment Variables marcando ese entorno " +
+        "(sin «Sensitive») y vuelva a desplegar. Ejemplo: https://mi-backend.up.railway.app",
+    ];
+  if (/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(valor)) return [];
+  const motivos = [];
+  if (valor !== valor.trim())
+    motivos.push("tiene espacios al inicio o al final");
+  let texto = valor.trim();
+  if (/^http:\/\//i.test(texto)) {
+    motivos.push("usa http:// en vez de https://");
+    texto = texto.replace(/^http:/i, "https:");
+  } else if (!/^https:\/\//i.test(texto)) {
+    motivos.push("le falta https:// al inicio");
+    texto = `https://${texto}`;
+  }
+  let sugerido = "";
+  try {
+    const u = new URL(texto);
+    if (u.pathname !== "/" || u.search || u.hash)
+      motivos.push(`incluye una ruta («${u.pathname}${u.search}${u.hash}»)`);
+    else if (texto.endsWith("/")) motivos.push("termina en /");
+    sugerido = u.origin;
+  } catch {
+    motivos.push("no es una dirección web válida");
+  }
+  return [
+    `NEXUS_BACKEND_URL («${valor}») ${motivos.join(", ")}. ` +
+      (sugerido
+        ? `Cámbiela en Vercel a exactamente: ${sugerido}`
+        : "Use la dirección pública del backend, por ejemplo https://mi-backend.up.railway.app") +
+      " y vuelva a desplegar. Vercel la usa tal cual en cada petición a /api.",
+  ];
+}
+
+errores.push(...problemasDelDestino(destino));
 if (process.env.VITE_USE_MOCKS === "true" && entorno === "production")
   errores.push(
     "VITE_USE_MOCKS=true no se permite en producción: publicaría la demostración.",

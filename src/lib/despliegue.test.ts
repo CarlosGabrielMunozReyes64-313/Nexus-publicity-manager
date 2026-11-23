@@ -78,15 +78,23 @@ describe("Configuración de Vercel por entorno", () => {
       }
     };
     expect(correr("https://pruebas-nexus.example")).toBe("ok");
-    for (const malo of [
-      "",
-      "https://pruebas-nexus.example/",
-      " https://pruebas-nexus.example",
-      "http://inseguro.example",
-      "https://pruebas-nexus.example/api",
-    ])
-      expect(correr(malo)).toContain(
-        "NEXUS_BACKEND_URL debe ser una URL https",
+    expect(correr("")).toContain(
+      "NEXUS_BACKEND_URL no está definida para Preview",
+    );
+    const casos: [string, string][] = [
+      ["https://pruebas-nexus.example/", "termina en /"],
+      [" https://pruebas-nexus.example", "tiene espacios"],
+      ["http://pruebas-nexus.example", "usa http://"],
+      ["pruebas-nexus.example", "le falta https://"],
+      ["https://pruebas-nexus.example/api", "incluye una ruta («/api»)"],
+    ];
+    for (const [malo, motivo] of casos) {
+      const salida = correr(malo);
+      expect(salida).toContain(motivo);
+      // Siempre dice el valor exacto que hay que poner.
+      expect(salida).toContain(
+        "Cámbiela en Vercel a exactamente: https://pruebas-nexus.example",
       );
+    }
   });
 });
