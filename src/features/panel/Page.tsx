@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import { MODO_DEMO } from "../../lib/modo";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Mail, Inbox, Copy, ShieldCheck } from "lucide-react";
@@ -12,7 +13,70 @@ import {
 } from "../../components/ui";
 import { Intro, Resource } from "../shared";
 import { fechaHora } from "../../lib/formato";
+import { useSesion } from "../../api/sesion";
 export default function Page() {
+  const { sesion } = useSesion();
+  return sesion?.cuenta.rol === "usuario" ? <PanelUsuario /> : <PanelAdmin />;
+}
+function Indicadores({ data }: { data: z.infer<typeof S.resumenSchema> }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+        gap: 16,
+        marginBottom: 24,
+      }}
+    >
+      <KpiTile
+        label="Contactos contactables"
+        value={data.contactables}
+        hint="Con base legal y correo válido"
+      />
+      <KpiTile
+        label="Campañas activas"
+        value={data.activas}
+        hint="Aprobadas por un administrador"
+      />
+      <KpiTile
+        label="Respuestas por atender"
+        value={data.pendientes}
+        hint="Conversaciones abiertas"
+      />
+      <KpiTile
+        label="Diagnósticos del mes"
+        value={data.diagnosticos}
+        hint="RSE Express"
+      />
+      <KpiTile
+        label="Reuniones del mes"
+        value={data.reuniones}
+        hint="El siguiente paso"
+      />
+    </div>
+  );
+}
+/** Rol «Usuario»: solo indicadores agregados y el embudo; sin acciones ni datos personales. */
+function PanelUsuario() {
+  const q = useResource("/panel/resumen", S.resumenSchema);
+  return (
+    <>
+      <Intro
+        title="Cada conexión cuenta."
+        description="Consulta cómo avanza la gestión de relaciones de NEXUS. Las acciones las realiza un administrador."
+      />
+      <QueryState loading={q.isPending} error={q.error} retry={q.refetch}>
+        {q.data && <Indicadores data={q.data} />}
+      </QueryState>
+      <Card title="El recorrido de los contactos">
+        <Resource path="/embudo" schema={S.embudoSchema}>
+          {(items) => <FunnelChart items={items} />}
+        </Resource>
+      </Card>
+    </>
+  );
+}
+function PanelAdmin() {
   const q = useResource("/panel/resumen", S.resumenSchema);
   const secuencias = useResource("/secuencias", S.secuenciaSchema.array());
   const dup = useResource("/duplicados", S.duplicadoSchema.array());

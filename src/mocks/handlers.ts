@@ -12,12 +12,14 @@ import {
 } from "../lib/reglas";
 import * as SQ from "./secuencias";
 import { ErrorDemo, type SolicitudMock } from "./secuencias";
+import { resetAccesos, rutaAccesos } from "./accesos";
 export let db = crearDatos();
 /** Pedidos a los agentes en el modo demostración (se resuelven al instante). */
 let pedidos: z.infer<typeof S.solicitudAgenteSchema>[] = [];
 /** Solicitudes a la IA de secuencias: el agente simulado tarda unos segundos. */
 let solicitudes: SolicitudMock[] = SQ.solicitudesIniciales(db);
 export const reset = () => {
+  resetAccesos();
   db = crearDatos();
   pedidos = [];
   solicitudes = SQ.solicitudesIniciales(db);
@@ -343,6 +345,8 @@ export async function route(request: Request): Promise<Response> {
   const method = request.method;
   const body: unknown =
     method === "GET" ? undefined : await request.json().catch(() => ({}));
+  const acceso = rutaAccesos(path, method, body);
+  if (acceso) return acceso;
   SQ.avanzar(db, solicitudes);
   const before = structuredClone(db);
   const collections = {

@@ -239,3 +239,120 @@
     padding: 18px 12px 32px;
   }
 }
+/* Centro de notificaciones */
+.campana {
+  position: relative;
+}
+.campanaBoton {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 33px;
+  height: 33px;
+  border-radius: 50%;
+  border: 1px solid #dce6df;
+  background: white;
+  color: var(--nx-dark);
+  cursor: pointer;
+}
+.campanaBoton:hover {
+  background: var(--nx-light);
+}
+.campanaContador {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--error);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+.bandeja {
+  position: absolute;
+  right: 0;
+  top: 42px;
+  z-index: 30;
+  width: 370px;
+  max-height: 480px;
+  overflow: auto;
+  background: white;
+  border: 1px solid #cfdfd5;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px #02402922;
+  padding: 14px 16px;
+  font-size: 12px;
+}
+.bandejaCabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.bandejaAccion {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  color: var(--nx-teal);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.bandejaAccion:disabled {
+  color: var(--nx-muted);
+  cursor: default;
+}
+.bandejaLista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.bandejaLista li {
+  border-top: 1px solid #e3ebe6;
+  padding: 10px 0;
+}
+.bandejaLista p {
+  margin: 4px 0;
+}
+.avisoNuevo {
+  color: var(--nx-text);
+}
+.avisoLeido {
+  color: var(--nx-muted);
+}
+.avisoTitulo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.punto {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--nx-mid);
+  flex: none;
+}
+.avisoPie {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.rol {
+  font-size: 10px;
+  color: var(--nx-muted);
+}
+.demoCuentas {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  text-align: left;
+}

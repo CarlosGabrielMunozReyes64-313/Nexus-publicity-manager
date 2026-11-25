@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { FeedbackProvider } from "../components/ui";
 import { db, reset, route } from "../mocks/handlers";
+import { SESION_ADMIN } from "../mocks/sesiones";
 import App from "../app/App";
 import Configuracion from "./configuracion/Page";
 import Campanas from "./campanas/Page";
@@ -39,7 +40,7 @@ function conSesion(respuesta: () => Response) {
 }
 beforeEach(() => {
   reset();
-  conSesion(() => Response.json({ ok: true }));
+  conSesion(() => Response.json(SESION_ADMIN));
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -74,9 +75,9 @@ describe("Sesión (19)", () => {
     );
     expect(screen.getByRole("button", { name: "Reintentar" })).toBeEnabled();
     expect(
-      screen.queryByRole("button", { name: "Iniciar sesión con Google" }),
+      screen.queryByRole("button", { name: "Continuar con Google" }),
     ).not.toBeInTheDocument();
-    conSesion(() => Response.json({ ok: true }));
+    conSesion(() => Response.json(SESION_ADMIN));
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Publicity manager")).toBeInTheDocument();
   });
@@ -89,7 +90,7 @@ describe("Sesión (19)", () => {
     );
     montarApp();
     expect(
-      await screen.findByRole("button", { name: "Iniciar sesión con Google" }),
+      await screen.findByRole("button", { name: "Continuar con Google" }),
     ).toBeInTheDocument();
   });
 });

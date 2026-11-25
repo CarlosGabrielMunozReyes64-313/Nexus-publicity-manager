@@ -1,4 +1,6 @@
-import { lazy, Suspense, useState } from "react";
+import { z } from "zod";
+import { lazy, Suspense, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BrowserRouter,
   Routes,
@@ -27,10 +29,14 @@ import {
   Search,
   LogOut,
   ShieldCheck,
+  UserCheck,
 } from "lucide-react";
 import { useResource } from "../api/hooks";
 import * as S from "../api/schemas";
-import { API_URL, esSesionVencida } from "../api/client";
+import { API_URL, esSesionVencida, request } from "../api/client";
+import { SesionContext, useSesion } from "../api/sesion";
+import { useSolicitudesAcceso } from "../api/accesos";
+import { CampanaNotificaciones } from "./Notificaciones";
 import { Button, Card, Skeleton, FeedbackProvider } from "../components/ui";
 import { MODO_DEMO } from "../lib/modo";
 import styles from "./Layout.module.css";
@@ -48,6 +54,9 @@ const pages = {
   configuracion: lazy(() => import("../features/configuracion/Page")),
   auditoria: lazy(() => import("../features/auditoria/Page")),
   terminal: lazy(() => import("../features/terminal/Page")),
+  "solicitudes-acceso": lazy(
+    () => import("../features/solicitudes-acceso/Page"),
+  ),
 };
 const nav: {
   group: string;
@@ -84,17 +93,130 @@ const nav: {
       ["configuracion", "Configuración", Settings],
       ["auditoria", "Registro de acciones", History],
       ["terminal", "Terminal", SquareTerminal],
+      ["solicitudes-acceso", "Solicitudes de acceso", UserCheck],
     ],
   },
 ];
 const mock = MODO_DEMO;
-const ERRORES_LOGIN: Record<string, string> = {
-  acceso_denegado:
-    "No se pudo iniciar sesión con esa cuenta. Use la cuenta de Google autorizada para administrar NEXUS.",
+const AVISOS_LOGIN: Record<string, { texto: string; tono: string }> = {
+  "solicitud=enviada": {
+    texto:
+      "Tu solicitud fue enviada. Podrás entrar cuando un administrador la apruebe.",
+    tono: "success",
+  },
+  "solicitud=pendiente": {
+    texto:
+      "Tu solicitud sigue pendiente. Podrás entrar cuando un administrador la apruebe.",
+    tono: "warning",
+  },
+  "solicitud=rechazada": {
+    texto: "Tu solicitud de acceso fue rechazada.",
+    tono: "danger",
+  },
+  "error=acceso_denegado": {
+    texto:
+      "No se pudo iniciar sesión con esa cuenta: Google no la verificó o la cuenta está desactivada.",
+    tono: "danger",
+  },
+  "error=cancelado": {
+    texto: "Cancelaste el inicio de sesión con Google.",
+    tono: "warning",
+  },
+  "sesion=vencida": {
+    texto:
+      "Tu sesión venció. Vuelve a identificarte con Google para continuar.",
+    tono: "warning",
+  },
 };
+const RESULTADO_DEMO = z.object({
+  resultado: z.enum([
+    "sesion",
+    "enviada",
+    "pendiente",
+    "rechazada",
+    "acceso_denegado",
+  ]),
+});
+/** Modo demostración: simula el selector de cuentas de Google. */
+function CuentasDemo({ onListo }: { onListo: (destino: string) => void }) {
+  const [correo, setCorreo] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [error, setError] = useState("");
+  const entrar = async (c: string, n: string) => {
+    setError("");
+    try {
+      const { resultado } = await request(
+        "/auth/demo/identificar",
+        RESULTADO_DEMO,
+        "POST",
+        { correo: c, nombre: n },
+      );
+      onListo(
+        resultado === "sesion"
+          ? "/"
+          : resultado === "acceso_denegado"
+            ? "/login?error=acceso_denegado"
+            : `/login?solicitud=${resultado}`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo continuar");
+    }
+  };
+  return (
+    <div
+      className={styles.demoCuentas}
+      aria-label="Cuentas de Google (simuladas)"
+    >
+      <small className="muted">Elija una cuenta de Google (simulada):</small>
+      <Button onClick={() => void entrar("admin@nexus.example", "")}>
+        Administrador NEXUS · admin@nexus.example
+      </Button>
+      <form
+        className={styles.demoCuentas}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void entrar(correo, nombre);
+        }}
+      >
+        <label>
+          Otra cuenta de Google · correo verificado
+          <input
+            type="email"
+            required
+            value={correo}
+            onChange={(e) => setCorreo(e.target.value)}
+            placeholder="persona@gmail.com"
+          />
+        </label>
+        <label>
+          Nombre en Google (opcional)
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} />
+        </label>
+        <Button type="submit">Continuar con esta cuenta</Button>
+      </form>
+      {error && (
+        <p role="alert" className="notice danger">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 function Login() {
   const navigate = useNavigate();
-  const error = new URLSearchParams(useLocation().search).get("error");
+  const cache = useQueryClient();
+  const [elegir, setElegir] = useState(false);
+  const params = new URLSearchParams(useLocation().search);
+  const aviso = (
+    [
+      ["solicitud", params.get("solicitud")],
+      ["error", params.get("error")],
+      ["sesion", params.get("sesion")],
+    ] as const
+  )
+    .filter(([, v]) => v)
+    .map(([k, v]) => AVISOS_LOGIN[`${k}=${v}`] ?? null)[0];
+  const error = params.get("error");
   return (
     <div className={styles.login}>
       <div className={styles.loginBox}>
@@ -107,50 +229,100 @@ function Login() {
         <Button
           variant="primary"
           onClick={() => {
-            if (mock) {
-              sessionStorage.setItem("nexus-session", "demo");
-              navigate("/");
-            } else window.location.assign(`${API_URL}/auth/google`);
+            if (mock) setElegir(true);
+            else window.location.assign(`${API_URL}/auth/google`);
           }}
         >
-          Iniciar sesión con Google
+          Continuar con Google
         </Button>
-        {error && (
-          <p role="alert" className="notice danger">
-            {ERRORES_LOGIN[error] ??
-              "No se pudo iniciar sesión. Intente de nuevo."}
+        {mock && elegir && (
+          <CuentasDemo
+            onListo={(destino) => {
+              cache.clear();
+              setElegir(false);
+              navigate(destino);
+            }}
+          />
+        )}
+        {aviso ? (
+          <p
+            role={aviso.tono === "success" ? "status" : "alert"}
+            className={`notice ${aviso.tono}`}
+          >
+            {aviso.texto}
           </p>
+        ) : (
+          error && (
+            <p role="alert" className="notice danger">
+              No se pudo iniciar sesión. Intente de nuevo.
+            </p>
+          )
         )}
         <p>
           <small>
             {mock
-              ? "Modo demostración · Un único administrador · Sin envíos reales"
-              : "Acceso reservado al administrador autorizado"}
+              ? "Modo demostración · Cuentas de Google simuladas · Sin envíos reales"
+              : "Cualquier cuenta de Google con correo verificado puede solicitar acceso; un administrador la aprueba."}
           </small>
         </p>
       </div>
     </div>
   );
 }
+function iniciales(nombre: string) {
+  return (
+    nombre
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]!.toUpperCase())
+      .join("") || "?"
+  );
+}
 function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const cache = useQueryClient();
+  const { sesion, esAdmin, veo } = useSesion();
   const [q, setQ] = useState("");
-  const contactos = useResource("/contactos", S.contactoSchema.array());
-  const empresas = useResource("/empresas", S.empresaSchema.array());
-  const secuencias = useResource("/secuencias", S.secuenciaSchema.array());
-  const respuestas = useResource("/respuestas", S.respuestaSchema.array());
+  // Solo el administrador carga los datos de gestión que usa la cabecera.
+  const contactos = useResource(
+    "/contactos",
+    S.contactoSchema.array(),
+    esAdmin,
+  );
+  const empresas = useResource("/empresas", S.empresaSchema.array(), esAdmin);
+  const secuencias = useResource(
+    "/secuencias",
+    S.secuenciaSchema.array(),
+    esAdmin,
+  );
+  const respuestas = useResource(
+    "/respuestas",
+    S.respuestaSchema.array(),
+    esAdmin,
+  );
   const integraciones = useResource(
     "/integraciones",
     S.integracionSchema.array(),
+    esAdmin,
   );
-  const resumen = useResource("/panel/resumen", S.resumenSchema);
-  const limites = useResource("/configuracion/limites", S.limitesSchema);
+  const resumen = useResource("/panel/resumen", S.resumenSchema, esAdmin);
+  const limites = useResource(
+    "/configuracion/limites",
+    S.limitesSchema,
+    esAdmin,
+  );
+  const solicitudes = useSolicitudesAcceso(veo("solicitudes-acceso"));
+  const menu = nav
+    .map((g) => ({ ...g, items: g.items.filter(([path]) => veo(path)) }))
+    .filter((g) => g.items.length);
   const title =
     nav
       .flatMap((g) => g.items)
       .find((i) => i[0] === location.pathname.split("/")[1])?.[1] ??
     "Panel general";
+  const cuenta = sesion!.cuenta;
   return (
     <div className={styles.shell}>
       <a href="#contenido" className="skip">
@@ -162,7 +334,7 @@ function Layout() {
         </div>
         <div className={styles.sub}>Publicity manager</div>
         <nav>
-          {nav.map((g) => (
+          {menu.map((g) => (
             <div key={g.group}>
               <div className={styles.group}>{g.group}</div>
               {g.items.map(([path, label, Icon]) => (
@@ -194,6 +366,15 @@ function Layout() {
                         .length ?? "—"}
                     </span>
                   )}
+                  {path === "solicitudes-acceso" && (
+                    <span
+                      className={styles.count}
+                      title="Solicitudes pendientes"
+                    >
+                      {solicitudes.data?.filter((s) => s.estado === "pendiente")
+                        .length ?? "—"}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>
@@ -213,67 +394,86 @@ function Layout() {
       </aside>
       <div>
         <header className={styles.topbar}>
-          <div className={styles.search}>
-            <Search size={15} />
-            <input
-              aria-label="Búsqueda global"
-              placeholder="Buscar contactos o empresas…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-            {q && (
-              <div className={styles.results}>
-                {[
-                  ...(contactos.data ?? [])
-                    .filter((c) =>
-                      c.nombre.toLowerCase().includes(q.toLowerCase()),
-                    )
-                    .map((c) => ({
-                      id: c.id,
-                      name: c.nombre,
-                      path: "/contactos/",
-                    })),
-                  ...(empresas.data ?? [])
-                    .filter((e) =>
-                      e.razonSocial.toLowerCase().includes(q.toLowerCase()),
-                    )
-                    .map((e) => ({
-                      id: e.id,
-                      name: e.razonSocial,
-                      path: "/empresas/",
-                    })),
-                ]
-                  .slice(0, 10)
-                  .map((x) => (
-                    <Link
-                      key={x.id}
-                      to={x.path + x.id}
-                      onClick={() => setQ("")}
-                    >
-                      {x.name}
-                    </Link>
-                  ))}
-              </div>
-            )}
-          </div>
+          {esAdmin ? (
+            <div className={styles.search}>
+              <Search size={15} />
+              <input
+                aria-label="Búsqueda global"
+                placeholder="Buscar contactos o empresas…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+              {q && (
+                <div className={styles.results}>
+                  {[
+                    ...(contactos.data ?? [])
+                      .filter((c) =>
+                        c.nombre.toLowerCase().includes(q.toLowerCase()),
+                      )
+                      .map((c) => ({
+                        id: c.id,
+                        name: c.nombre,
+                        path: "/contactos/",
+                      })),
+                    ...(empresas.data ?? [])
+                      .filter((e) =>
+                        e.razonSocial.toLowerCase().includes(q.toLowerCase()),
+                      )
+                      .map((e) => ({
+                        id: e.id,
+                        name: e.razonSocial,
+                        path: "/empresas/",
+                      })),
+                  ]
+                    .slice(0, 10)
+                    .map((x) => (
+                      <Link
+                        key={x.id}
+                        to={x.path + x.id}
+                        onClick={() => setQ("")}
+                      >
+                        {x.name}
+                      </Link>
+                    ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div />
+          )}
           <div className={styles.admin}>
-            <span>
-              Cupo del día{" "}
-              <strong>
-                {resumen.data?.enviadosHoy ?? "—"} de{" "}
-                {limites.data?.topeDiarioNuevos ?? "—"}
-              </strong>
+            {esAdmin && (
+              <>
+                <span>
+                  Cupo del día{" "}
+                  <strong>
+                    {resumen.data?.enviadosHoy ?? "—"} de{" "}
+                    {limites.data?.topeDiarioNuevos ?? "—"}
+                  </strong>
+                </span>
+                <span>
+                  ● Gmail{" "}
+                  {integraciones.data?.find((i) => i.id === "gmail")?.estado ??
+                    "…"}
+                </span>
+              </>
+            )}
+            <CampanaNotificaciones />
+            <span className={styles.avatar} aria-hidden>
+              {iniciales(cuenta.nombre)}
             </span>
             <span>
-              ● Gmail{" "}
-              {integraciones.data?.find((i) => i.id === "gmail")?.estado ?? "…"}
+              <strong>{cuenta.nombre}</strong>
+              <br />
+              <span className={styles.rol} title={cuenta.correo}>
+                {cuenta.rolEtiqueta}
+              </span>
             </span>
-            <span className={styles.avatar}>AD</span>
-            <span>Administrador</span>
             <Button
               aria-label="Cerrar sesión"
               onClick={() => {
                 sessionStorage.removeItem("nexus-session");
+                cache.clear();
                 if (!mock) window.location.assign(`${API_URL}/auth/logout`);
                 else navigate("/login");
               }}
@@ -307,6 +507,22 @@ function Layout() {
     </div>
   );
 }
+/** Sesión válida sin permiso para esta pantalla (distinto de una sesión vencida). */
+function SinPermiso() {
+  return (
+    <Card title="Sin permiso para esta sección">
+      <p role="alert">
+        Tu cuenta no tiene permiso para ver esta pantalla. Si lo necesitas,
+        pídeselo a un administrador.
+      </p>
+      <Link to="/">Volver al panel general</Link>
+    </Card>
+  );
+}
+function Permitido({ ruta, children }: { ruta: string; children: ReactNode }) {
+  const { veo } = useSesion();
+  return veo(ruta) ? <>{children}</> : <SinPermiso />;
+}
 function SinConexion({
   error,
   retry,
@@ -337,17 +553,24 @@ function SinConexion({
   );
 }
 function Protected() {
-  const session = useResource("/auth/session", S.okSchema, !mock);
-  if (mock)
-    return sessionStorage.getItem("nexus-session") ? (
-      <Layout />
-    ) : (
-      <Navigate to="/login" replace />
-    );
+  // También en la demostración: la sesión la responde el simulador (MSW).
+  const session = useResource("/auth/session", S.sesionSchema);
   if (session.isPending) return <Skeleton />;
-  // Solo un error de autenticación lleva al inicio de sesión.
-  if (esSesionVencida(session.error)) return <Navigate to="/login" replace />;
-  if (session.data) return <Layout />;
+  // Solo un error de autenticación lleva al inicio de sesión. Si había una sesión
+  // válida en esta pestaña, se avisa que venció.
+  if (esSesionVencida(session.error))
+    return (
+      <Navigate
+        to={session.data ? "/login?sesion=vencida" : "/login"}
+        replace
+      />
+    );
+  if (session.data)
+    return (
+      <SesionContext.Provider value={session.data}>
+        <Layout />
+      </SesionContext.Provider>
+    );
   return (
     <SinConexion
       error={session.error}
@@ -394,12 +617,30 @@ export default function App() {
               <Route
                 key={key}
                 path={key === "panel" ? "/" : `${key}/*`}
-                element={<Page />}
+                element={
+                  <Permitido ruta={key === "panel" ? "/" : `/${key}`}>
+                    <Page />
+                  </Permitido>
+                }
               />
             ))}
             {/* Propuestas ya no existe: sus enlaces llevan a Secuencias de correo. */}
-            <Route path="propuestas" element={<RedirigirPropuesta />} />
-            <Route path="propuestas/:id" element={<RedirigirPropuesta />} />
+            <Route
+              path="propuestas"
+              element={
+                <Permitido ruta="/secuencias">
+                  <RedirigirPropuesta />
+                </Permitido>
+              }
+            />
+            <Route
+              path="propuestas/:id"
+              element={
+                <Permitido ruta="/secuencias">
+                  <RedirigirPropuesta />
+                </Permitido>
+              }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
