@@ -1,0 +1,40 @@
+/** Respuestas de GET /auth/session para pruebas que simulan la API real. */
+export const SESION_ADMIN = {
+  ok: true,
+  cuenta: {
+    id: "adm-demo",
+    correo: "admin@nexus.example",
+    nombre: "Administrador NEXUS",
+    rol: "administrador",
+    rolEtiqueta: "Administrador",
+  },
+  permisos: {
+    pantallas: [
+      "panel",
+      "contactos",
+      "empresas",
+      "descubrimiento",
+      "segmentos",
+      "secuencias",
+      "campanas",
+      "respuestas",
+      "embudo",
+      "informes",
+      "configuracion",
+      "auditoria",
+      "terminal",
+      "solicitudes-acceso",
+    ],
+    capacidades: [
+      "panel:ver",
+      "datos:ver",
+      "datos:modificar",
+      "campanas:modificar",
+      "envios:gestionar",
+      "integraciones:gestionar",
+      "configuracion:gestionar",
+      "accesos:gestionar",
+      "auditoria:ver",
+    ],
+  },
+} as const;

@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { FeedbackProvider } from "../components/ui";
 import { db, reset, route } from "../mocks/handlers";
+import { SESION_ADMIN } from "../mocks/sesiones";
 import App, { RedirigirPropuesta } from "../app/App";
 import Panel from "./panel/Page";
 import Empresas from "./empresas/Page";
@@ -42,7 +43,7 @@ beforeEach(() => {
     "fetch",
     async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith("/auth/session"))
-        return Response.json({ ok: true });
+        return Response.json(SESION_ADMIN);
       const r = new Request(new URL(String(input), location.href), init);
       llamadas.push({
         ruta: new URL(r.url).pathname.replace(/^\/api/, ""),

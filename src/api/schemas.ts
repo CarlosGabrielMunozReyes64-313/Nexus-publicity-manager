@@ -686,3 +686,68 @@ export const sugerenciaSchema = z.object({
   original: z.object({ asunto: str.optional(), cuerpo: str }).optional(),
   error: str.optional(),
 });
+/** Roles: el administrador gestiona todo; el usuario solo consulta el panel. */
+export const rolSchema = z.enum(["administrador", "usuario"]);
+export const cuentaSchema = z.object({
+  id,
+  correo: str,
+  nombre: str,
+  rol: rolSchema,
+  rolEtiqueta: str,
+});
+/** GET /auth/session: identidad real y permisos publicados por la API. */
+export const sesionSchema = z.object({
+  ok: z.literal(true),
+  cuenta: cuentaSchema,
+  permisos: z.object({
+    /** Pantallas visibles ("panel" es la raíz). */
+    pantallas: z.array(str),
+    capacidades: z.array(str),
+  }),
+});
+export const estadoSolicitudSchema = z.enum([
+  "pendiente",
+  "aprobada",
+  "rechazada",
+]);
+/** GET /solicitudes-acceso (solo administradores). */
+export const solicitudAccesoSchema = z.object({
+  id,
+  correo: str,
+  nombre: str.optional(),
+  estado: estadoSolicitudSchema,
+  creadaEn: str,
+  ultimaIdentificacionEn: str,
+  identificaciones: num,
+  decididaEn: str.optional(),
+  decididaPor: z.object({ id, nombre: str, correo: str }).optional(),
+});
+/** POST /solicitudes-acceso/:id/aprobar|rechazar. */
+export const decisionSolicitudSchema = z.object({
+  ok: z.literal(true),
+  solicitud: solicitudAccesoSchema,
+});
+export const notificacionSchema = z.object({
+  id,
+  tipo: z.enum([
+    "solicitud_acceso",
+    "acceso_aprobado",
+    "pausa_envios",
+    "fallo_integracion",
+    "tarea_fallida",
+  ]),
+  titulo: str,
+  descripcion: str,
+  /** Solo si el destinatario tiene permiso para esa pantalla. */
+  enlace: str.optional(),
+  repeticiones: num,
+  creadaEn: str,
+  ultimaVez: str,
+  leida: z.boolean(),
+  leidaEn: str.optional(),
+});
+/** GET /notificaciones: bandeja propia (avisos recientes y total sin leer). */
+export const bandejaNotificacionesSchema = z.object({
+  sinLeer: num,
+  items: z.array(notificacionSchema),
+});
