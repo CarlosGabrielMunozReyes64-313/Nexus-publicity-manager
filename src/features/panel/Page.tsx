@@ -15,8 +15,9 @@ import { Intro, Resource } from "../shared";
 import { fechaHora } from "../../lib/formato";
 import { useSesion } from "../../api/sesion";
 export default function Page() {
-  const { sesion } = useSesion();
-  return sesion?.cuenta.rol === "usuario" ? <PanelUsuario /> : <PanelAdmin />;
+  const { sesion, puede } = useSesion();
+  // Panel reducido solo para una cuenta sin acceso a los datos de gestión.
+  return sesion && !puede("datos:ver") ? <PanelUsuario /> : <PanelAdmin />;
 }
 function Indicadores({ data }: { data: z.infer<typeof S.resumenSchema> }) {
   return (
@@ -56,7 +57,7 @@ function Indicadores({ data }: { data: z.infer<typeof S.resumenSchema> }) {
     </div>
   );
 }
-/** Rol «Usuario»: solo indicadores agregados y el embudo; sin acciones ni datos personales. */
+/** Cuenta sin «datos:ver»: solo indicadores agregados y el embudo. */
 function PanelUsuario() {
   const q = useResource("/panel/resumen", S.resumenSchema);
   return (

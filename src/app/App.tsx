@@ -283,7 +283,9 @@ function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const cache = useQueryClient();
-  const { sesion, esAdmin, veo } = useSesion();
+  const { sesion, puede, veo } = useSesion();
+  // Datos de gestión de la cabecera: administradores y usuarios aprobados.
+  const esAdmin = puede("datos:ver");
   const [q, setQ] = useState("");
   // Solo el administrador carga los datos de gestión que usa la cabecera.
   const contactos = useResource(

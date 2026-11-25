@@ -146,12 +146,20 @@ describe("Solicitar acceso con Google (demostración)", () => {
     await conGoogle(EXTERNA, "Ana Externa");
     expect(await screen.findByText("Ana Externa")).toBeInTheDocument();
     expect(screen.getByText("Usuario")).toBeInTheDocument();
+    // Todo el menú del administrador, salvo «Solicitudes de acceso».
     const nav = screen.getByRole("navigation");
-    expect(within(nav).getAllByRole("link")).toHaveLength(1);
-    expect(within(nav).getByRole("link")).toHaveTextContent("Panel general");
-    expect(screen.queryByLabelText("Búsqueda global")).toBeNull();
     expect(
-      await screen.findByText("Contactos contactables"),
+      within(nav).getByRole("link", { name: /Contactos/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(nav).getByRole("link", { name: /Configuración/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(nav).queryByRole("link", { name: /Solicitudes de acceso/ }),
+    ).toBeNull();
+    expect(screen.getByLabelText("Búsqueda global")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Tu atención hace la diferencia"),
     ).toBeInTheDocument();
     fireEvent.click(
       await screen.findByRole("button", {
@@ -238,7 +246,7 @@ describe("Solicitar acceso con Google (demostración)", () => {
   });
 });
 
-describe("Permisos del rol Usuario (demostración)", () => {
+describe("Usuario aprobado: todo menos gestionar accesos (demostración)", () => {
   async function usuarioAprobado() {
     sessionStorage.clear();
     await api("/auth/demo/identificar", "POST", {
@@ -260,7 +268,7 @@ describe("Permisos del rol Usuario (demostración)", () => {
     return { avisoAdmin };
   }
 
-  it("la API rechaza aprobar, gestionar y leer avisos ajenos", async () => {
+  it("opera como administrador pero no aprueba solicitudes ni lee avisos ajenos", async () => {
     const { avisoAdmin } = await usuarioAprobado();
     expect((await api("/auth/session")).data.cuenta.rol).toBe("usuario");
     const otra = await api("/solicitudes-acceso");
@@ -268,8 +276,11 @@ describe("Permisos del rol Usuario (demostración)", () => {
     expect(otra.data.message).toBe(
       "Su cuenta no tiene permiso para esta acción",
     );
-    expect((await api("/contactos")).status).toBe(403);
-    expect((await api("/campanas/cam1/pausar", "POST", {})).status).toBe(403);
+    expect((await api("/contactos")).status).toBe(200);
+    expect((await api("/configuracion/marca")).status).toBe(200);
+    expect((await api("/campanas/cam1/pausar", "POST", {})).status).not.toBe(
+      403,
+    );
     expect((await api("/panel/resumen")).status).toBe(200);
     expect(
       (await api(`/notificaciones/${avisoAdmin}/leer`, "POST", {})).status,
@@ -281,9 +292,9 @@ describe("Permisos del rol Usuario (demostración)", () => {
     expect(propia.leida).toBe(false);
   });
 
-  it("una ruta sin permiso muestra «Sin permiso», no el inicio de sesión", async () => {
+  it("Solicitudes de acceso muestra «Sin permiso», no el inicio de sesión", async () => {
     await usuarioAprobado();
-    montarApp("/configuracion");
+    montarApp("/solicitudes-acceso");
     expect(
       await screen.findByText("Sin permiso para esta sección"),
     ).toBeInTheDocument();

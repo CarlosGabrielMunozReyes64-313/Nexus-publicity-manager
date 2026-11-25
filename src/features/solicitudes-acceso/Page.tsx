@@ -37,8 +37,9 @@ export default function Page() {
         accion === "aprobar" ? (
           <p>
             <strong>{s.nombre ?? s.correo}</strong> podrá entrar con el rol
-            «Usuario» la próxima vez que se identifique con Google. Solo verá el
-            panel general.
+            «Usuario» la próxima vez que se identifique con Google: tendrá todo
+            lo del administrador, salvo aprobar o rechazar solicitudes de
+            acceso.
           </p>
         ) : (
           <p>
@@ -72,7 +73,7 @@ export default function Page() {
     <>
       <Intro
         title="Solicitudes de acceso"
-        description="Personas que se identificaron con Google y piden entrar a NEXUS. Al aprobarlas reciben el rol «Usuario»."
+        description="Personas que se identificaron con Google y piden entrar a NEXUS. Al aprobarlas reciben el rol «Usuario»: todo lo del administrador salvo gestionar accesos."
       />
       <QueryState loading={q.isPending} error={q.error} retry={q.refetch}>
         <div style={{ display: "grid", gap: 24 }}>

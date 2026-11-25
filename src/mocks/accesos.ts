@@ -49,8 +49,11 @@ const PANTALLAS: Record<Rol, string[]> = {
     "terminal",
     "solicitudes-acceso",
   ],
-  usuario: ["panel"],
+  usuario: [],
 };
+PANTALLAS.usuario = PANTALLAS.administrador.filter(
+  (p) => p !== "solicitudes-acceso",
+);
 const CAPACIDADES: Record<Rol, string[]> = {
   administrador: [
     "panel:ver",
@@ -63,10 +66,12 @@ const CAPACIDADES: Record<Rol, string[]> = {
     "accesos:gestionar",
     "auditoria:ver",
   ],
-  usuario: ["panel:ver"],
+  usuario: [],
 };
-/** Lecturas que el rol «usuario» puede hacer (igual que LECTURAS_USUARIO del backend). */
-const LECTURAS_USUARIO = new Set(["/panel/resumen", "/embudo"]);
+// Usuario aprobado: todo lo del administrador salvo gestionar accesos.
+CAPACIDADES.usuario = CAPACIDADES.administrador.filter(
+  (c) => c !== "accesos:gestionar",
+);
 
 let cuentas: Cuenta[] = [];
 let solicitudes: Solicitud[] = [];
@@ -359,7 +364,7 @@ export function rutaAccesos(
             tipo: "acceso_aprobado",
             titulo: "Tu acceso fue aprobado",
             descripcion:
-              "Un administrador aprobó tu solicitud. Entraste con el rol «Usuario»: puedes consultar el panel general.",
+              "Un administrador aprobó tu solicitud. Tienes acceso completo a NEXUS, salvo aprobar o rechazar solicitudes de acceso.",
             enlace: "/",
             clave: `acceso_aprobado:${s.id}`,
           });
@@ -370,14 +375,7 @@ export function rutaAccesos(
     }
     return falla("Ruta no encontrada", 404);
   }
-  // Resto de la API: la sesión de la demostración aplica los permisos de su rol. Sin
-  // sesión se atiende como el administrador (pruebas del contrato que llaman directo).
-  if (
-    cuenta &&
-    cuenta.rol !== "administrador" &&
-    !(method === "GET" && LECTURAS_USUARIO.has(path))
-  )
-    return falla(SIN_PERMISO, 403);
+  // Resto de la API: administradores y usuarios aprobados operan igual.
   return null;
 }
 
