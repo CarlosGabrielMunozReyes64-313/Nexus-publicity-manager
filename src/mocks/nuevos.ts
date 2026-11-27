@@ -35,6 +35,9 @@ interface PlantillaMock {
   version: number;
   archivada: boolean;
   actualizadoEn: string;
+  predeterminada?: boolean;
+  categoria?: string;
+  descripcion?: string;
 }
 let listas: ListaMock[] = [];
 let plantillas: PlantillaMock[] = [
@@ -48,6 +51,10 @@ let plantillas: PlantillaMock[] = [
     version: 1,
     archivada: false,
     actualizadoEn: iso(),
+    predeterminada: true,
+    categoria: "Primer contacto",
+    descripcion:
+      "Sin imágenes ni diseño: lo que mejor llega en un primer correo.",
   },
 ];
 export function resetNuevos() {
@@ -610,6 +617,10 @@ export function rutaNuevos(
         motivo: "Modo demostración: no se programan envíos",
       },
     });
+  if (path === "/imagenes")
+    return method === "GET"
+      ? HttpResponse.json([])
+      : fail("En la demostración no se suben imágenes; use la API real");
   if (path === "/bajas/sincronizacion")
     return HttpResponse.json({
       configurada: false,

@@ -23,6 +23,12 @@
       "respectOriginCacheControl": false
     },
     {
+      "source": "/img/:path*",
+      "destination": "$NEXUS_BACKEND_URL/img/:path*",
+      "env": ["NEXUS_BACKEND_URL"],
+      "respectOriginCacheControl": true
+    },
+    {
       "source": "/r/:path*",
       "destination": "$NEXUS_BACKEND_URL/r/:path*",
       "env": ["NEXUS_BACKEND_URL"],

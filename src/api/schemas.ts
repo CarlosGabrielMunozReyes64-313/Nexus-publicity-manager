@@ -943,6 +943,24 @@ export const plantillaSchema = z.object({
   variables: z.array(str),
   sinBaja: z.boolean(),
   actualizadoEn: str,
+  /** Plantilla de la galería de NEXUS: no se modifica, se duplica. */
+  predeterminada: z.boolean().optional(),
+  categoria: str.optional(),
+  descripcion: str.optional(),
+  /** Lleva tablas o imágenes: se edita con el editor de diseño. */
+  diseno: z.boolean().optional(),
+});
+export const imagenSchema = z.object({
+  id,
+  nombre: str,
+  tipo: str,
+  tamano: num,
+  ejemplo: z.boolean(),
+  creadoEn: str,
+  /** Ruta relativa que se guarda en el HTML (/img/<id>). */
+  ruta: str,
+  /** Dirección pública absoluta. */
+  url: str,
 });
 export const vistaPlantillaSchema = z.object({
   asunto: str,

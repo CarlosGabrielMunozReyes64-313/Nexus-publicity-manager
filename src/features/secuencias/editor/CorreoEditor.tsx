@@ -1,4 +1,5 @@
 import { Suspense, lazy, useRef, type ReactNode } from "react";
+import { ESQUELETO, esDiseno, htmlATexto } from "../../plantillas/diseno";
 import { AlertTriangle, XCircle } from "lucide-react";
 import { Card } from "../../../components/ui";
 import type { z } from "zod";
@@ -16,6 +17,7 @@ import { textoAHtml } from "./textoAHtml";
 
 // TipTap solo se descarga cuando un correo usa «Texto con formato».
 const CuerpoConFormato = lazy(() => import("./CuerpoConFormato"));
+const EditorDiseno = lazy(() => import("../../plantillas/EditorDiseno"));
 
 type Nota = z.infer<typeof S.notaPasoSchema>;
 
@@ -132,21 +134,50 @@ export default function CorreoEditor({
         <label>
           Formato
           <select
-            value={correo.formato ?? "texto"}
+            value={
+              correo.formato === "html"
+                ? esDiseno(correo.cuerpoHtml)
+                  ? "diseno"
+                  : "html"
+                : "texto"
+            }
             onChange={(e) =>
-              e.target.value === "html"
+              e.target.value === "diseno"
                 ? cambiar({
                     formato: "html",
-                    cuerpoHtml: textoAHtml(correo.cuerpo),
+                    cuerpoHtml: ESQUELETO,
+                    cuerpo: htmlATexto(ESQUELETO),
                   })
-                : cambiar({ formato: "texto", cuerpoHtml: undefined })
+                : e.target.value === "html"
+                  ? cambiar({
+                      formato: "html",
+                      cuerpoHtml: textoAHtml(correo.cuerpo),
+                    })
+                  : cambiar({ formato: "texto", cuerpoHtml: undefined })
             }
           >
             <option value="texto">Texto simple (recomendado)</option>
             <option value="html">Texto con formato</option>
+            <option value="diseno">Diseño con imágenes</option>
           </select>
         </label>
-        {correo.formato === "html" ? (
+        {correo.formato === "html" && esDiseno(correo.cuerpoHtml) ? (
+          <>
+            <p className="notice warning">
+              Con imágenes, Gmail suele enviar el correo a «Promociones» y
+              muchos programas las ocultan al principio. Para el primer contacto
+              se recomienda texto simple.
+            </p>
+            <Suspense fallback={<small>Cargando el editor…</small>}>
+              <EditorDiseno
+                html={correo.cuerpoHtml ?? ""}
+                onCambiar={(cuerpoHtml, cuerpo) =>
+                  cambiar({ cuerpoHtml, cuerpo })
+                }
+              />
+            </Suspense>
+          </>
+        ) : correo.formato === "html" ? (
           <>
             <p className="muted">
               Los correos en texto simple parecen escritos por una persona y

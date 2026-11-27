@@ -260,3 +260,50 @@ describe("Plantillas", () => {
     expect(screen.getByRole("button", { name: "Guardar" })).toBeDisabled();
   });
 });
+
+describe("Plantillas con diseño", () => {
+  it("cambia imágenes, inserta filas antes del pie y deriva el texto", async () => {
+    const {
+      ESQUELETO,
+      cambiarImagen,
+      htmlATexto,
+      imagenesDe,
+      imagenHtml,
+      insertarFila,
+    } = await import("./plantillas/diseno");
+    let h = insertarFila(
+      ESQUELETO,
+      imagenHtml("/img/11111111-0000-4000-8000-000000000002", "Portada"),
+    );
+    expect(h.indexOf("Portada")).toBeLessThan(h.indexOf("{{firma}}"));
+    expect(imagenesDe(h)).toEqual([
+      {
+        src: "/img/11111111-0000-4000-8000-000000000002",
+        alt: "Portada",
+        indice: 0,
+      },
+    ]);
+    h = cambiarImagen(h, 0, {
+      src: "https://ejemplo.example/x.png",
+      alt: 'Otra "imagen"',
+    });
+    expect(imagenesDe(h)[0]).toMatchObject({
+      src: "https://ejemplo.example/x.png",
+      alt: "Otra imagen",
+    });
+    const texto = htmlATexto(h);
+    expect(texto).toContain("Hacer el diagnóstico ({{enlace}})");
+    expect(texto).toMatch(/\{\{firma\}\}\s+\{\{baja\}\}$/);
+  });
+  it("una plantilla de la galería no se edita: se usa como base", async () => {
+    montar(<Plantillas />, "/plantillas/pl-demo");
+    expect(await screen.findByText(/no se modifica/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Nombre")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Usar como base" }));
+    await waitFor(() =>
+      expect(
+        llamadas.some((l) => l.ruta === "/plantillas/pl-demo/duplicar"),
+      ).toBe(true),
+    );
+  });
+});

@@ -23,17 +23,19 @@ const config = JSON.parse(
 };
 
 describe("Configuración de Vercel por entorno", () => {
-  it("reenvía API, salud, bajas y seguimiento al backend de cada despliegue, sin caché", () => {
+  it("reenvía API, salud, bajas, imágenes y seguimiento al backend de cada despliegue", () => {
     expect(config.rewrites.map((r) => [r.source, r.destination])).toEqual([
       ["/api/:path*", "$NEXUS_BACKEND_URL/api/:path*"],
       ["/health", "$NEXUS_BACKEND_URL/health"],
       ["/baja/:path*", "$NEXUS_BACKEND_URL/baja/:path*"],
+      ["/img/:path*", "$NEXUS_BACKEND_URL/img/:path*"],
       ["/r/:path*", "$NEXUS_BACKEND_URL/r/:path*"],
       ["/(.*)", "/index.html"],
     ]);
-    for (const r of config.rewrites.slice(0, 4)) {
+    for (const r of config.rewrites.slice(0, 5)) {
       expect(r.env).toEqual(["NEXUS_BACKEND_URL"]);
-      expect(r.respectOriginCacheControl).toBe(false);
+      // Solo las imágenes (inmutables) respetan la caché del backend.
+      expect(r.respectOriginCacheControl).toBe(r.source === "/img/:path*");
     }
     // Ninguna dirección fija: ni producción ni otro servidor.
     expect(JSON.stringify(config.rewrites)).not.toMatch(/https?:\/\//);
