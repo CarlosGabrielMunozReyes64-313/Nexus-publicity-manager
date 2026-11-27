@@ -82,11 +82,11 @@ npm run verificar:despliegue -- https://su-app.vercel.app
 ## Recorrido para probar (demostración)
 
 1. Panel: indicadores, tareas y embudo.
-2. Contactos → Importar CSV → `ejemplos/contactos.csv`. Mapee nombre/correo, elija empresa, origen y base legal, previsualice y confirme. Cambiar cualquiera de esas opciones obliga a previsualizar de nuevo; al terminar se muestra cuántas filas se crearon, omitieron y rechazaron.
+2. Contactos → Importar CSV o Excel → `ejemplos/contactos.csv` (en la API real también .xlsx). Mapee columnas, elija qué hacer con los correos existentes, la empresa, la lista, el origen y la base legal; previsualice (cada fila dice qué pasará y por qué) y confirme. Cambiar una opción obliga a previsualizar de nuevo; al terminar se muestra cuántas filas se crearon, actualizaron, omitieron o fallaron, con su número de fila. «Exportar a Excel» descarga todas las filas del filtro (API real). «Nuevo contacto» permite buscar o crear la empresa en el mismo formulario.
 3. Abra un contacto: evidencias, prueba legal y aprobación. Importar nunca verifica un correo ni aprueba una base legal.
 4. Empresas → Duplicados: compare, fusione o marque «No es duplicado».
 5. Descubrimiento: acepte un resultado; el que coincide con una empresa existente queda bloqueado.
-6. Segmentos, Secuencias de correo y Campañas: aprobar no envía; activar sí (en la API real). En Secuencias de correo, guardar crea un borrador y lo aprobado se sigue enviando hasta aprobar los cambios.
+6. Segmentos (reglas Y/O con vista previa del servidor), Listas de envío, Plantillas y Secuencias de correo. En la API real, «Aprobar y programar» inscribe a los destinatarios elegibles y programa su primer correo; la pestaña **Envíos** muestra cada destinatario (programado, aceptado por Gmail, por conciliar, fallido, pausado) y qué falta. En la demostración no se programa ni se envía nada. Guardar crea un borrador y lo aprobado se sigue enviando hasta aprobar los cambios.
 7. Respuestas: revise el borrador antes de enviar. Crear oportunidad la vincula con la respuesta y su campaña.
 8. Embudo: mover una oportunidad a Cliente retira a sus contactos de las secuencias.
 9. Informes: elija el periodo; el embudo de esa pestaña sigue las mismas fechas. Registre un costo con su fecha real.

@@ -13,8 +13,8 @@ type Contacto = z.infer<typeof S.contactoElegibleSchema>;
 const mensaje = (e: unknown, defecto: string) =>
   e instanceof Error ? e.message : defecto;
 
-/** Aprobar (o «Aprobar cambios»): resumen, aviso de que no se envía nada y, si la
- * campaña está activa, la opción de aprobar y reanudar. */
+/** Aprobar (o «Aprobar cambios»): resumen y, por omisión, programar los envíos en el
+ * mismo paso. Se puede aprobar sin programar (por ejemplo, para revisar en Envíos). */
 export function DialogoAprobar({
   secuenciaId,
   campanaId,
@@ -24,6 +24,7 @@ export function DialogoAprobar({
   contenido,
   rev,
   onClose,
+  onAprobada,
 }: {
   secuenciaId: string;
   campanaId?: string;
@@ -33,40 +34,43 @@ export function DialogoAprobar({
   contenido: Borrador;
   rev: Revision;
   onClose: () => void;
+  onAprobada?: () => void;
 }) {
   const cache = useQueryClient();
   const { notify } = useFeedback();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const aprobar = async (reanudar: boolean) => {
+  const [programar, setProgramar] = useState(true);
+  const aprobar = async () => {
+    if (busy) return; // doble clic
     setBusy(true);
     setError("");
     try {
-      await request(
-        `/secuencias/${secuenciaId}/${reanudar ? "aprobar-y-reanudar" : "aprobar"}`,
-        S.okSchema,
+      const r = await request(
+        `/secuencias/${secuenciaId}/aprobar`,
+        S.aprobadaSchema,
         "POST",
-        {},
+        { programar },
       );
       await cache.invalidateQueries();
       onClose();
+      const p = r.programacion;
       notify(
-        reanudar
-          ? "Cambios aprobados y campaña reanudada."
-          : "Secuencia aprobada. No se envió ningún correo.",
+        !programar
+          ? "Secuencia aprobada sin programar. No se envió ningún correo."
+          : p?.activada
+            ? `Aprobada y programada: primer correo para ${p.inscritos + p.reanudadas} destinatario(s). Siga su avance en «Envíos».`
+            : `Aprobada, pero no se programó ningún envío: ${p?.motivo ?? "revise «Envíos»"}`,
       );
+      onAprobada?.();
     } catch (e) {
-      // Si reanudar falla, la aprobación ya quedó guardada.
       await cache.invalidateQueries();
-      setError(
-        reanudar
-          ? `Se aprobó la versión, pero no se pudo reanudar: ${mensaje(e, "error")}`
-          : mensaje(e, "No se pudo aprobar"),
-      );
+      setError(mensaje(e, "No se pudo aprobar"));
     } finally {
       setBusy(false);
     }
   };
+  const fuera = Object.entries(rev.noElegibles ?? {});
   return (
     <Modal
       title={cambios ? "Aprobar cambios" : "Aprobar secuencia"}
@@ -80,15 +84,48 @@ export function DialogoAprobar({
           hábiles
         </li>
         <li>Ventana: {ventanaTexto(contenido.ventanaEnvio)}</li>
+        {rev.audiencia && (
+          <li>
+            Audiencia: {rev.audiencia.tipo === "lista" ? "lista" : "segmento"} «
+            {rev.audiencia.nombre}»
+          </li>
+        )}
         <li>
           {rev.elegibles}{" "}
-          {rev.elegibles === 1 ? "contacto elegible" : "contactos elegibles"}
+          {rev.elegibles === 1
+            ? "destinatario elegible"
+            : "destinatarios elegibles"}
+          {fuera.length > 0 &&
+            ` (fuera: ${fuera.map(([k, v]) => `${k}: ${v}`).join(" · ")})`}
         </li>
         <li>Tope diario: {rev.topeDiario ?? "sin dato"} correos nuevos</li>
       </ul>
+      <label className="row">
+        <input
+          type="checkbox"
+          checked={programar}
+          onChange={(e) => setProgramar(e.target.checked)}
+        />
+        Programar los envíos al aprobar
+      </label>
       <p className="notice">
-        Aprobar no envía ningún correo. Los envíos empiezan cuando actives la
-        campaña
+        {programar ? (
+          <>
+            Al aprobar se programa el primer correo para cada destinatario
+            elegible. Salen dentro de la ventana, con las cuotas diarias y la
+            separación entre correos; los siguientes respetan sus esperas y se
+            detienen si el contacto responde o se da de baja.
+            {!rev.gmailConectado &&
+              " Gmail no está conectado: no se programará nada hasta conectarlo."}
+            {rev.elegibles === 0 &&
+              " Hoy no hay destinatarios elegibles: no saldrá nada."}
+          </>
+        ) : (
+          <>
+            Aprobar sin programar no envía ningún correo; podrá programar
+            después en «Envíos».
+          </>
+        )}
         {campanaId && (
           <>
             {" "}
@@ -99,13 +136,12 @@ export function DialogoAprobar({
             )
           </>
         )}
-        .
       </p>
       {campanaActiva && (
         <p className="notice warning">
-          La campaña está activa: al aprobar se pausan sus envíos hasta que la
-          reanudes. Con «Aprobar y reanudar» sigue enviando, ya con la versión
-          nueva.
+          La campaña está activa: aprobar los cambios aplica la versión nueva a
+          los envíos pendientes
+          {programar ? "" : " y la deja en pausa hasta programar"}.
         </p>
       )}
       {rev.advertencias.length > 0 && (
@@ -124,17 +160,20 @@ export function DialogoAprobar({
         <Button disabled={busy} onClick={onClose}>
           Cancelar
         </Button>
-        {campanaActiva && (
-          <Button disabled={busy} onClick={() => void aprobar(true)}>
-            Aprobar y reanudar
-          </Button>
-        )}
         <Button
           variant="primary"
           disabled={busy}
-          onClick={() => void aprobar(false)}
+          onClick={() => void aprobar()}
         >
-          {busy ? "Aprobando…" : cambios ? "Aprobar cambios" : "Aprobar"}
+          {busy
+            ? "Aprobando…"
+            : programar
+              ? cambios
+                ? "Aprobar cambios y programar"
+                : "Aprobar y programar"
+              : cambios
+                ? "Aprobar cambios"
+                : "Aprobar"}
         </Button>
       </footer>
     </Modal>

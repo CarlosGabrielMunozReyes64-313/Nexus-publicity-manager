@@ -38,13 +38,21 @@ import {
 import Historial from "./Historial";
 import ListaCorreos, { type EstadoCorreo } from "./ListaCorreos";
 import MejorarConIA from "./MejorarConIA";
+import { UsarPlantilla } from "../../plantillas/Page";
+import Envios from "./Envios";
 import { copiaLocal, useAvisoSalida, type CopiaLocal } from "./salida";
 import Verificacion from "./Verificacion";
 import { Hilo, VistaPreviaVivo } from "./VistaPrevia";
 import styles from "./Editor.module.css";
 
 type BorradorServidor = z.infer<typeof S.borradorSchema>;
-const PESTANAS = ["Correos", "Configuración", "Vista previa", "Historial"];
+const PESTANAS = [
+  "Correos",
+  "Configuración",
+  "Vista previa",
+  "Envíos",
+  "Historial",
+];
 /** Bloqueo del servidor cuando lo aprobado ya es lo último (no es un error). */
 const SIN_CAMBIOS =
   "No hay cambios para aprobar: la versión aprobada ya está vigente";
@@ -535,13 +543,30 @@ function EditorCargado({
                 onCambiar={cambiarCorreo}
                 extra={
                   secuencia.archivada ? undefined : (
-                    <MejorarConIA
-                      secuenciaId={id}
-                      orden={iActual + 1}
-                      correo={correo}
-                      contenido={draft}
-                      onUsar={cambiarCorreo}
-                    />
+                    <>
+                      <UsarPlantilla
+                        onUsar={(p) =>
+                          cambiarCorreo({
+                            ...correo,
+                            asunto:
+                              iActual === 0 || !correo.mismoHilo
+                                ? p.asunto || correo.asunto
+                                : correo.asunto,
+                            cuerpo: p.cuerpo,
+                            formato: p.formato,
+                            cuerpoHtml: p.cuerpoHtml,
+                            plantillaId: p.plantillaId,
+                          })
+                        }
+                      />
+                      <MejorarConIA
+                        secuenciaId={id}
+                        orden={iActual + 1}
+                        correo={correo}
+                        contenido={draft}
+                        onUsar={cambiarCorreo}
+                      />
+                    </>
                   )
                 }
               />
@@ -575,6 +600,7 @@ function EditorCargado({
       {pestana === "Vista previa" && (
         <Hilo secuenciaId={id} contenido={draft} contactos={elegibles.data} />
       )}
+      {pestana === "Envíos" && <Envios secuencia={secuencia} />}
       {pestana === "Historial" && (
         <Historial
           secuenciaId={id}
@@ -611,6 +637,7 @@ function EditorCargado({
           contenido={draft}
           rev={rev.data}
           onClose={() => setDialogo(null)}
+          onAprobada={() => setPestana("Envíos")}
         />
       )}
       {dialogo === "prueba" && (

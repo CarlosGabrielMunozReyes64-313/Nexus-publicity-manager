@@ -13,7 +13,7 @@ import { FeedbackProvider } from "../components/ui";
 import { route, reset, db } from "../mocks/handlers";
 import Empresas from "./empresas/Page";
 import Descubrimiento from "./descubrimiento/Page";
-import ImportCSV from "./contactos/ImportCSV";
+import Importar from "./contactos/Importar";
 function wrapper(children: ReactNode, path = "/") {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -54,33 +54,18 @@ describe("Pantallas críticas", () => {
     await waitFor(() => expect(db.empresas).toHaveLength(26));
   });
   it("importación mapea, previsualiza y confirma una fila", async () => {
-    wrapper(
-      <ImportCSV
-        contactos={db.contactos}
-        empresas={db.empresas}
-        onClose={() => {}}
-      />,
-    );
+    wrapper(<Importar empresas={db.empresas} onClose={() => {}} />);
     const file = new File(
       ["nombre,correo\nImportado,importado@demo.example"],
       "demo.csv",
       { type: "text/csv" },
     );
-    Object.defineProperty(file, "text", {
-      value: async () => "nombre,correo\nImportado,importado@demo.example",
-    });
-    fireEvent.change(screen.getByLabelText(/Archivo CSV/), {
+    fireEvent.change(screen.getByLabelText(/Archivo \(\.csv o \.xlsx/), {
       target: { files: [file] },
     });
     await screen.findByText("Previsualizar importación");
     fireEvent.change(screen.getByLabelText("Empresa de estos contactos"), {
       target: { value: "e1" },
-    });
-    fireEvent.change(screen.getByLabelText("Origen obligatorio"), {
-      target: { value: "manual" },
-    });
-    fireEvent.change(screen.getByLabelText("Base legal obligatoria"), {
-      target: { value: "pendiente" },
     });
     fireEvent.click(
       screen.getByRole("button", { name: "Previsualizar importación" }),

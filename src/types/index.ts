@@ -121,11 +121,20 @@ export interface Interaccion {
   origen?: Origen;
 }
 
-export interface ReglaSegmento {
+export interface ReglaSimple {
   campo: string;
   operador: "es" | "no_es" | "contiene" | "mayor_que" | "menor_que";
   valor: string;
 }
+/** Grupo de reglas combinadas con Y u O. La lista de primer nivel se combina con Y. */
+export interface GrupoReglas {
+  grupo: "y" | "o";
+  reglas: ReglaSegmento[];
+  /** Marca el grupo que representa la raíz «al menos una (O)» en el editor. */
+  raiz?: boolean;
+}
+export type ReglaSegmento = ReglaSimple | GrupoReglas;
+export const esGrupo = (r: ReglaSegmento): r is GrupoReglas => "grupo" in r;
 
 export interface Segmento {
   id: string;
@@ -177,6 +186,9 @@ export interface Secuencia {
   campanaId?: string;
   campanaEstado?: string;
   segmentoId?: string;
+  listaId?: string;
+  incorporarNuevos?: boolean;
+  motivoNoProgramada?: string;
   estadoEditor?: EstadoEditor;
   versionBorrador?: number;
   versionAprobada?: number;

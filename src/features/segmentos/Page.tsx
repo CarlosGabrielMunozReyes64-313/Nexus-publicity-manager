@@ -7,9 +7,10 @@ import { useResource } from "../../api/hooks";
 import { fechaHora } from "../../lib/formato";
 import * as S from "../../api/schemas";
 import type { Segmento, ReglaSegmento } from "../../types";
+import { describirReglas } from "./describir";
 import { Button, Card, Badge, QueryState, Table } from "../../components/ui";
-import { Intro, Select, useCommand } from "../shared";
-import { coincide } from "../../lib/reglas";
+import { Intro, useCommand } from "../shared";
+import { EditorReglas, useVistaPrevia } from "./Reglas";
 export default function Page() {
   const q = useResource("/segmentos", S.segmentoSchema.array());
   const id = useLocation().pathname.split("/")[2];
@@ -44,6 +45,7 @@ export default function Page() {
                 <Card key={s.id} title={s.nombre}>
                   <Badge>{s.estado}</Badge>
                   <p>{s.justificacion}</p>
+                  <p className="muted">{describirReglas(s.reglas)}</p>
                   <p>
                     {s.tamano} contactos · versión {s.version} ·{" "}
                     {s.propuestoPor}
@@ -92,12 +94,10 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
     setReglas(nuevas);
     setSucio(true);
   };
-  const c = useResource("/contactos", S.contactoSchema.array());
-  const e = useResource("/empresas", S.empresaSchema.array());
+  const listas = useResource("/listas", S.listaSchema.array());
   const cmd = useCommand();
-  const matches = (c.data ?? []).filter((c) =>
-    coincide(c, e.data ?? [], reglas),
-  );
+  const previa = useVistaPrevia(reglas);
+  const conteo = previa.conteo ?? 0;
   const sinGuardar = !!item && sucio;
   return (
     <div className="grid">
@@ -115,7 +115,7 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                   nombre,
                   reglas,
                   justificacion: j,
-                  tamano: matches.length,
+                  tamano: conteo,
                   version: item?.version ?? 1,
                   estado: "propuesto",
                   propuestoPor: "admin",
@@ -150,75 +150,14 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
               }}
             />
           </label>
-          {reglas.map((r, i) => (
-            <fieldset key={i}>
-              <legend>Regla {i + 1}</legend>
-              <Select
-                all={false}
-                label="Campo"
-                value={r.campo}
-                onChange={(v) =>
-                  cambiarReglas(
-                    reglas.map((x, k) => (k === i ? { ...x, campo: v } : x)),
-                  )
-                }
-                options={[
-                  "municipio",
-                  "sector",
-                  "tamano",
-                  "puntaje",
-                  "etapa",
-                  "origen",
-                  "baseLegal",
-                  "contactoIds",
-                ]}
-              />
-              <Select
-                all={false}
-                label="Operador"
-                value={r.operador}
-                onChange={(v) =>
-                  cambiarReglas(
-                    reglas.map((x, k) =>
-                      k === i
-                        ? { ...x, operador: v as ReglaSegmento["operador"] }
-                        : x,
-                    ),
-                  )
-                }
-                options={S.reglaSchema.shape.operador.options}
-              />
-              <label>
-                Valor
-                <input
-                  required
-                  value={r.valor}
-                  onChange={(e) =>
-                    cambiarReglas(
-                      reglas.map((x, k) =>
-                        k === i ? { ...x, valor: e.target.value } : x,
-                      ),
-                    )
-                  }
-                />
-              </label>
-              <Button
-                onClick={() => cambiarReglas(reglas.filter((_, k) => k !== i))}
-              >
-                Quitar regla
-              </Button>
-            </fieldset>
-          ))}
-          <Button
-            onClick={() =>
-              cambiarReglas([
-                ...reglas,
-                { campo: "sector", operador: "contiene", valor: "" },
-              ])
-            }
-          >
-            Añadir regla
-          </Button>
+          <EditorReglas
+            reglas={reglas}
+            onChange={cambiarReglas}
+            listas={(listas.data ?? []).map((l) => ({
+              id: l.id,
+              nombre: l.nombre,
+            }))}
+          />
           <Button variant="primary" type="submit" disabled={cmd.pending}>
             Guardar para revisión
           </Button>
@@ -238,7 +177,7 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
                 onClick={() =>
                   cmd.ask(
                     "Aprobar segmento",
-                    `${matches.length} contactos coinciden. Solo los elegibles podrán entrar en campañas.`,
+                    `${conteo} contactos coinciden. Solo los elegibles podrán entrar en campañas.`,
                     `/segmentos/${item.id}/aprobar`,
                   )
                 }
@@ -279,15 +218,33 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
           )}
         </form>
       </Card>
-      <Card title={`Vista previa · ${matches.length} contactos`}>
+      <Card
+        title={`Vista previa · ${previa.cargando && previa.conteo === undefined ? "…" : conteo} contactos`}
+      >
+        <p className="muted">
+          Calculada en el servidor con la misma lógica que elige los
+          destinatarios al aprobar una secuencia. Muestra hasta 8 contactos.
+        </p>
+        {previa.error && (
+          <p role="alert" className="danger">
+            {previa.error}
+          </p>
+        )}
         <Table
-          data={matches}
+          data={previa.muestra}
           columns={[
             { accessorKey: "nombre", header: "Nombre" },
             { accessorKey: "correo", header: "Correo" },
             { accessorKey: "etapa", header: "Etapa" },
           ]}
         />
+        {item && (
+          <p>
+            <Link to={`/listas?desdeSegmento=${item.id}`}>
+              Crear una lista de envío desde este segmento →
+            </Link>
+          </p>
+        )}
       </Card>
     </div>
   );

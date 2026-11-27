@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import type { Marca, LimitesEnvio, Integracion } from "../../types";
 import * as S from "../../api/schemas";
+import { useResource } from "../../api/hooks";
 import { Button, Card, Badge, Tabs, Table } from "../../components/ui";
 import { Intro, Resource, useCommand } from "../shared";
 import { fecha, fechaHora } from "../../lib/formato";
@@ -340,6 +341,7 @@ export default function Page() {
                 Agregar supresión
               </Button>
             </form>
+            <EstadoBajas />
             <Resource path="/supresiones" schema={S.supresionSchema.array()}>
               {(s) => (
                 <Table
@@ -352,6 +354,31 @@ export default function Page() {
                       id: "fecha",
                       header: "Fecha",
                       cell: (c) => fecha(c.row.original.fecha),
+                    },
+                    {
+                      id: "sincronizacion",
+                      header: "Baja",
+                      cell: ({ row }) => {
+                        const x = row.original.sincronizacion;
+                        if (!row.original.correo)
+                          return <Badge>efectiva</Badge>;
+                        if (!x || x.estado === "pendiente")
+                          return (
+                            <span
+                              title={
+                                x?.ultimoError ??
+                                "Esperando copia a la base de bajas"
+                              }
+                            >
+                              <Badge tono="warning">
+                                efectiva · sincronización pendiente
+                              </Badge>
+                            </span>
+                          );
+                        return (
+                          <Badge tono="success">efectiva · sincronizada</Badge>
+                        );
+                      },
                     },
                   ]}
                 />
@@ -670,5 +697,20 @@ function AprobacionAutomatica() {
         </Card>
       )}
     </Resource>
+  );
+}
+
+/** Estado de la copia de bajas en la base secundaria (UNSUBSCRIBE_DATABASE_URL). */
+function EstadoBajas() {
+  const q = useResource("/bajas/sincronizacion", S.resumenBajasSchema);
+  if (!q.data) return null;
+  const d = q.data;
+  return (
+    <p className={d.pendientes && d.ultimoError ? "notice warning" : "muted"}>
+      Toda baja surte efecto al instante en NEXUS.{" "}
+      {d.configurada
+        ? `Copia en la base de bajas: ${d.sincronizadas} sincronizadas, ${d.pendientes} pendientes${d.ultimoError ? ` (último error: ${d.ultimoError})` : ""}.`
+        : `La base de bajas no está configurada (UNSUBSCRIBE_DATABASE_URL): ${d.pendientes} bajas esperan para copiarse.`}
+    </p>
   );
 }

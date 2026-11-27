@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Plus, Upload } from "lucide-react";
+import { Download, Plus, Upload } from "lucide-react";
 import { useResource } from "../../api/hooks";
 import * as S from "../../api/schemas";
 import type { Contacto, Empresa, BaseLegal } from "../../types";
@@ -16,7 +16,9 @@ import {
 import { Intro, Select, Resource, useCommand } from "../shared";
 import { motivoInscripcion } from "../../lib/reglas";
 import { fechaHora } from "../../lib/formato";
-import ImportCSV from "./ImportCSV";
+import Importar from "./Importar";
+import NuevoContacto from "./NuevoContacto";
+import { exportar } from "../listas/Page";
 export default function Page() {
   const navigate = useNavigate();
   const q = useResource("/contactos", S.contactoSchema.array());
@@ -59,7 +61,32 @@ export default function Page() {
             <div className="row">
               <Button onClick={() => setImporting(true)}>
                 <Upload size={16} />
-                Importar CSV
+                Importar CSV o Excel
+              </Button>
+              <Button
+                onClick={() => {
+                  const filtrado =
+                    Boolean(search) || Object.values(filters).some(Boolean);
+                  const qs = new URLSearchParams({
+                    ambito: filtrado ? "filtro" : "todo",
+                    ...(search ? { q: search } : {}),
+                    ...Object.fromEntries(
+                      Object.entries(filters).filter(([, v]) => v),
+                    ),
+                  });
+                  void exportar(
+                    `/contactos/exportar?${qs.toString()}`,
+                    filtrado ? "contactos-filtrados.xlsx" : "contactos.xlsx",
+                  ).catch((e: unknown) =>
+                    cmd.notify(
+                      e instanceof Error ? e.message : "No se pudo exportar",
+                    ),
+                  );
+                }}
+                title="Incluye todas las filas que coinciden, no solo la página visible"
+              >
+                <Download size={16} />
+                Exportar a Excel
               </Button>
               <Button variant="primary" onClick={() => setCreating(true)}>
                 <Plus size={16} />
@@ -147,6 +174,7 @@ export default function Page() {
                 <Button onClick={() => setSegment(true)}>
                   Añadir a segmento
                 </Button>
+                <AnadirALista ids={selected} onListo={() => setSelected([])} />
               </div>
             )}
             <Table
@@ -246,14 +274,10 @@ export default function Page() {
         )}
       </QueryState>
       {importing && (
-        <ImportCSV
-          contactos={data}
-          empresas={empresas}
-          onClose={() => setImporting(false)}
-        />
+        <Importar empresas={empresas} onClose={() => setImporting(false)} />
       )}
       {creating && (
-        <CreateContact empresas={empresas} onClose={() => setCreating(false)} />
+        <NuevoContacto empresas={empresas} onClose={() => setCreating(false)} />
       )}
       {segment && (
         <Modal
@@ -298,79 +322,40 @@ export default function Page() {
     </>
   );
 }
-function CreateContact({
-  empresas,
-  onClose,
+function AnadirALista({
+  ids,
+  onListo,
 }: {
-  empresas: Empresa[];
-  onClose: () => void;
+  ids: string[];
+  onListo: () => void;
 }) {
-  const [nombre, setNombre] = useState("");
-  const [correo, setCorreo] = useState("");
-  const [eid, setEid] = useState(empresas[0]?.id ?? "");
+  const listas = useResource("/listas", S.listaSchema.array());
   const cmd = useCommand();
+  const [lista, setLista] = useState("");
+  const estaticas = (listas.data ?? []).filter((l) => l.tipo === "estatica");
+  if (!estaticas.length) return null;
   return (
-    <Modal title="Nuevo contacto" onClose={onClose}>
-      <form
-        className="stack"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          if (
-            await cmd.save("/contactos", {
-              id: "nuevo",
-              empresaId: eid,
-              nombre,
-              correo,
-              estadoCorreo: "desconocido",
-              etapa: "identificado",
-              baseLegal: { tipo: "pendiente", aprobadaPorAdmin: false },
-              excluido: false,
-              origen: "manual",
-              evidencias: [
-                {
-                  campo: "nombre",
-                  valor: nombre,
-                  fuente: "manual",
-                  obtenidoEn: new Date().toISOString(),
-                  estado: "pendiente",
-                },
-              ],
-              creadoEn: new Date().toISOString(),
-              actualizadoEn: new Date().toISOString(),
-            })
-          )
-            onClose();
+    <span className="row">
+      <Select
+        all={false}
+        label="Lista"
+        value={lista}
+        onChange={setLista}
+        options={[
+          { value: "", label: "Elija una lista" },
+          ...estaticas.map((l) => ({ value: l.id, label: l.nombre })),
+        ]}
+      />
+      <Button
+        disabled={!lista}
+        onClick={async () => {
+          if (await cmd.save(`/listas/${lista}/agregar`, { contactoIds: ids }))
+            onListo();
         }}
       >
-        <label>
-          Nombre
-          <input
-            required
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-          />
-        </label>
-        <label>
-          Correo
-          <input
-            type="email"
-            required
-            value={correo}
-            onChange={(e) => setCorreo(e.target.value)}
-          />
-        </label>
-        <Select
-          all={false}
-          label="Empresa"
-          value={eid}
-          onChange={setEid}
-          options={empresas.map((e) => ({ value: e.id, label: e.razonSocial }))}
-        />
-        <Button type="submit" variant="primary" disabled={cmd.pending}>
-          Crear contacto
-        </Button>
-      </form>
-    </Modal>
+        Añadir a lista
+      </Button>
+    </span>
   );
 }
 // La autorización de formulario solo llega desde el webhook firmado del sitio.

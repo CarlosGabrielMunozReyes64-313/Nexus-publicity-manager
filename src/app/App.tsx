@@ -30,6 +30,8 @@ import {
   LogOut,
   ShieldCheck,
   UserCheck,
+  ListChecks,
+  FileText,
 } from "lucide-react";
 import { useResource } from "../api/hooks";
 import * as S from "../api/schemas";
@@ -46,6 +48,8 @@ const pages = {
   empresas: lazy(() => import("../features/empresas/Page")),
   descubrimiento: lazy(() => import("../features/descubrimiento/Page")),
   segmentos: lazy(() => import("../features/segmentos/Page")),
+  listas: lazy(() => import("../features/listas/Page")),
+  plantillas: lazy(() => import("../features/plantillas/Page")),
   secuencias: lazy(() => import("../features/secuencias/Page")),
   campanas: lazy(() => import("../features/campanas/Page")),
   respuestas: lazy(() => import("../features/respuestas/Page")),
@@ -70,12 +74,14 @@ const nav: {
       ["empresas", "Empresas", Building2],
       ["descubrimiento", "Descubrimiento", Compass],
       ["segmentos", "Segmentos", Layers],
+      ["listas", "Listas de envío", ListChecks],
     ],
   },
   {
     group: "Campañas",
     items: [
       ["secuencias", "Secuencias de correo", Mail],
+      ["plantillas", "Plantillas", FileText],
       ["campanas", "Campañas activas", Send],
     ],
   },

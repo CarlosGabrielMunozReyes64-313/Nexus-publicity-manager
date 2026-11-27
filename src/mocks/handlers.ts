@@ -13,6 +13,7 @@ import {
 import * as SQ from "./secuencias";
 import { ErrorDemo, type SolicitudMock } from "./secuencias";
 import { resetAccesos, rutaAccesos } from "./accesos";
+import { resetNuevos, rutaNuevos } from "./nuevos";
 export let db = crearDatos();
 /** Pedidos a los agentes en el modo demostración (se resuelven al instante). */
 let pedidos: z.infer<typeof S.solicitudAgenteSchema>[] = [];
@@ -20,6 +21,7 @@ let pedidos: z.infer<typeof S.solicitudAgenteSchema>[] = [];
 let solicitudes: SolicitudMock[] = SQ.solicitudesIniciales(db);
 export const reset = () => {
   resetAccesos();
+  resetNuevos();
   db = crearDatos();
   pedidos = [];
   solicitudes = SQ.solicitudesIniciales(db);
@@ -297,8 +299,46 @@ function mutarSecuencias(
   switch (action) {
     case "previsualizar":
       return HttpResponse.json(SQ.previsualizar(db, id, body));
-    case "aprobar":
-      return ok(SQ.aprobar(db, id), "aprobar_secuencia", id);
+    case "aprobar": {
+      const cam = SQ.campanaDe(db, id);
+      const estabaActiva = cam?.estado === "activa";
+      const r = SQ.aprobar(db, id);
+      log("aprobar_secuencia", "secuencias", id, null, null);
+      const programar =
+        (body as { programar?: boolean } | undefined)?.programar !== false;
+      if (!programar || !cam) return HttpResponse.json(r);
+      // Demostración: se marca como programada, pero nunca se envía nada.
+      if (
+        db.integraciones.find((i) => i.id === "gmail")?.estado !== "conectada"
+      )
+        return HttpResponse.json({
+          ...r,
+          programacion: {
+            activada: false,
+            inscritos: 0,
+            reanudadas: 0,
+            elegibles: 0,
+            motivo: "Gmail no está conectado",
+          },
+        });
+      cam.estado = "activa";
+      const reanudadas = db.inscripciones.filter(
+        (i) => i.campanaId === cam.id && !i.motivoSalida,
+      );
+      reanudadas.forEach((i) => {
+        i.estado = "activa";
+        i.proximoEnvio = iso(-1);
+      });
+      return HttpResponse.json({
+        ...r,
+        programacion: {
+          activada: true,
+          inscritos: 0,
+          reanudadas: estabaActiva ? reanudadas.length : reanudadas.length,
+          elegibles: reanudadas.length,
+        },
+      });
+    }
     case "aprobar-y-reanudar": {
       const cam = SQ.campanaDe(db, id);
       if (cam?.estado !== "activa")
@@ -347,6 +387,8 @@ export async function route(request: Request): Promise<Response> {
     method === "GET" ? undefined : await request.json().catch(() => ({}));
   const acceso = rutaAccesos(path, method, body);
   if (acceso) return acceso;
+  const nuevo = rutaNuevos(db, path, method, body, u.searchParams);
+  if (nuevo) return nuevo;
   SQ.avanzar(db, solicitudes);
   const before = structuredClone(db);
   const collections = {
@@ -841,7 +883,7 @@ export async function route(request: Request): Promise<Response> {
       }
     } else if (resource === "segmentos") {
       if (id === "previsualizar") {
-        const reglas = z.array(S.reglaSchema).parse(body);
+        const reglas = z.array(S.reglaSegmentoSchema).parse(body);
         const muestra = db.contactos.filter((c) =>
           coincide(c, db.empresas, reglas),
         );

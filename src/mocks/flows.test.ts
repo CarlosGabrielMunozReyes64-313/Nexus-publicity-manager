@@ -298,13 +298,15 @@ describe("Escenario de la demo: secuencia de correo de punta a punta", () => {
     });
     expect(db.pruebas.at(-1)?.asunto.startsWith("[Prueba] ")).toBe(true);
 
-    // 6. Aprobar: no envía nada; la campaña queda aprobada.
+    // 6. Aprobar sin programar: no envía nada; la campaña queda aprobada.
     const rev = await json(
       S.revisionSecuenciaSchema,
       `/secuencias/${id}/revision`,
     );
     expect(rev.puedeAprobar).toBe(true);
-    await json(S.okSchema, `/secuencias/${id}/aprobar`, "POST", {});
+    await json(S.okSchema, `/secuencias/${id}/aprobar`, "POST", {
+      programar: false,
+    });
     const aprobada = await json(S.secuenciaSchema, `/secuencias/${id}`);
     expect(aprobada.versionAprobada).toBe(2);
     expect(aprobada.pasos[1].cuerpo).toBe(texto2);

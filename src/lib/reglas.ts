@@ -7,6 +7,7 @@ import type {
   Empresa,
   ReglaSegmento,
 } from "../types";
+import { esGrupo } from "../types";
 export function motivoInscripcion(
   c: Contacto,
   supresiones: Supresion[] = [],
@@ -48,29 +49,52 @@ export function huella(s: Secuencia, segmento: Segmento): string {
     version: segmento.version,
   });
 }
+/** Misma lógica que coincide_indexado() del backend (modo demostración). La lista de
+ * primer nivel se combina con Y; un grupo combina sus reglas con Y u O. */
 export function coincide(
   c: Contacto,
   empresas: Empresa[],
   reglas: ReglaSegmento[],
 ): boolean {
   const e = empresas.find((x) => x.id === c.empresaId);
-  return reglas.every((r) => {
-    if (r.campo === "contactoIds") return r.valor.split(",").includes(c.id);
-    const campos: Record<string, string> = {
-      etapa: c.etapa,
-      origen: c.origen,
-      municipio: e?.municipio ?? "",
-      sector: e?.sector ?? "",
-      tamano: e?.tamano ?? "",
-      puntaje: String(e?.puntaje?.total ?? 0),
-      baseLegal: c.baseLegal.aprobadaPorAdmin ? "aprobada" : "pendiente",
-    };
+  const correo = c.correo ?? "";
+  const campos: Record<string, string> = {
+    etapa: c.etapa,
+    origen: c.origen,
+    municipio: e?.municipio ?? "",
+    sector: e?.sector ?? "",
+    tamano: e?.tamano ?? "",
+    puntaje: String(e?.puntaje?.total ?? 0),
+    baseLegal: c.baseLegal.aprobadaPorAdmin ? "aprobada" : "pendiente",
+    cargo: c.cargo ?? "",
+    estadoCorreo: c.estadoCorreo,
+    estadoCuenta: e?.estadoCuenta ?? "",
+    dominioCorreo: correo.includes("@")
+      ? correo.split("@")[1].toLowerCase()
+      : "",
+    hizoClic: "no",
+    respondio: "no",
+    recibioCorreo: "no",
+  };
+  const una = (r: ReglaSegmento): boolean => {
+    if (esGrupo(r))
+      return r.grupo === "o" ? r.reglas.some(una) : r.reglas.every(una);
+    if (r.campo === "contactoIds") {
+      const dentro = r.valor.split(",").includes(c.id);
+      return r.operador === "no_es" ? !dentro : dentro;
+    }
+    if (r.campo === "lista") return r.operador === "no_es";
     const valor = campos[r.campo] ?? "";
+    const dominio = r.campo === "dominioCorreo";
     switch (r.operador) {
       case "es":
-        return valor === r.valor;
+        return dominio
+          ? valor.toLowerCase() === r.valor.toLowerCase()
+          : valor === r.valor;
       case "no_es":
-        return valor !== r.valor;
+        return dominio
+          ? valor.toLowerCase() !== r.valor.toLowerCase()
+          : valor !== r.valor;
       case "contiene":
         return valor.toLowerCase().includes(r.valor.toLowerCase());
       case "mayor_que":
@@ -78,7 +102,8 @@ export function coincide(
       case "menor_que":
         return Number(valor) < Number(r.valor);
     }
-  });
+  };
+  return reglas.every(una);
 }
 export function validarSecuencia(
   s: Secuencia,

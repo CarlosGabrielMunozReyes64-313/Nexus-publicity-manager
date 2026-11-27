@@ -39,6 +39,8 @@ const PANTALLAS: Record<Rol, string[]> = {
     "empresas",
     "descubrimiento",
     "segmentos",
+    "listas",
+    "plantillas",
     "secuencias",
     "campanas",
     "respuestas",

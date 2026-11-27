@@ -100,15 +100,30 @@ export const empresaSchema = z.object({
   estadoCuenta: z.enum(["prospecto", "cliente"]),
   evidencias: z.array(evidenciaSchema),
 });
-export const reglaSchema = z.object({
+export const reglaSimpleSchema = z.object({
   campo: str,
   operador: z.enum(["es", "no_es", "contiene", "mayor_que", "menor_que"]),
   valor: str,
 });
+/** Compatibilidad: el nombre anterior (reglas simples). */
+export const reglaSchema = reglaSimpleSchema;
+type ReglaZ =
+  z.infer<typeof reglaSimpleSchema> | { grupo: "y" | "o"; reglas: ReglaZ[] };
+/** Regla simple o grupo Y/O (anidado). La lista de primer nivel se combina con Y. */
+export const reglaSegmentoSchema: z.ZodType<ReglaZ> = z.lazy(() =>
+  z.union([
+    reglaSimpleSchema,
+    z.object({
+      grupo: z.enum(["y", "o"]),
+      reglas: z.array(reglaSegmentoSchema),
+      raiz: z.boolean().optional(),
+    }),
+  ]),
+);
 export const segmentoSchema = z.object({
   id,
   nombre: str,
-  reglas: z.array(reglaSchema),
+  reglas: z.array(reglaSegmentoSchema),
   justificacion: str,
   tamano: num,
   version: num,
@@ -137,6 +152,8 @@ export const pasoSchema = z.object({
   ),
   formato: z.enum(["texto", "html"]).optional(),
   cuerpoHtml: str.optional(),
+  /** Plantilla de la que se copió el contenido (solo referencia). */
+  plantillaId: str.optional(),
 });
 export const secuenciaSchema = z.object({
   id,
@@ -150,6 +167,9 @@ export const secuenciaSchema = z.object({
   campanaId: str.optional(),
   campanaEstado: str.optional(),
   segmentoId: str.optional(),
+  listaId: str.optional(),
+  incorporarNuevos: z.boolean().optional(),
+  motivoNoProgramada: str.optional(),
   estadoEditor: z.enum(estadosEditor).optional(),
   versionBorrador: num.optional(),
   versionAprobada: num.optional(),
@@ -369,6 +389,16 @@ export const supresionSchema = z.object({
   dominio: str.optional(),
   motivo: str,
   fecha: str,
+  origen: str.optional(),
+  /** Copia en la base secundaria de bajas (la baja ya es efectiva sin ella). */
+  sincronizacion: z
+    .object({
+      estado: z.enum(["pendiente", "sincronizada"]),
+      intentos: num,
+      ultimoError: str.optional(),
+      sincronizadaEn: str.optional(),
+    })
+    .optional(),
 });
 export const auditoriaSchema = z.object({
   id,
@@ -648,6 +678,16 @@ export const revisionSecuenciaSchema = z.object({
   ventanaValida: z.boolean().optional(),
   topeDiario: num.optional(),
   campanaEstado: str.optional(),
+  candidatos: num.optional(),
+  noElegibles: z.record(num).optional(),
+  audiencia: z
+    .object({
+      tipo: z.enum(["segmento", "lista"]),
+      id,
+      nombre: str,
+      incorporarNuevos: z.boolean(),
+    })
+    .optional(),
 });
 /** GET /secuencias/solicitudes: pedidos a la IA de los últimos 30 días. */
 export const solicitudSecuenciaSchema = z.object({
@@ -750,4 +790,251 @@ export const notificacionSchema = z.object({
 export const bandejaNotificacionesSchema = z.object({
   sinLeer: num,
   items: z.array(notificacionSchema),
+});
+
+// ------------------------------------------------------------------ envíos
+
+/** Resultado de programar al aprobar, reanudar o «Programar envíos». */
+export const programacionSchema = z.object({
+  activada: z.boolean(),
+  inscritos: num,
+  reanudadas: num,
+  elegibles: num,
+  motivo: str.optional(),
+});
+export const aprobadaSchema = z
+  .object({
+    ok: z.literal(true),
+    version: num.optional(),
+    programacion: programacionSchema.optional(),
+  })
+  .passthrough();
+export const estadoDestinatarioSchema = z.enum([
+  "programado",
+  "entregando",
+  "aceptado",
+  "completada",
+  "conciliar",
+  "fallido",
+  "pausada",
+  "finalizada",
+  "pendiente",
+]);
+/** GET /secuencias/:id/envios */
+export const enviosSchema = z.object({
+  aprobada: z.boolean(),
+  campanaId: str.optional(),
+  campanaEstado: str.optional(),
+  programadaEn: str.optional(),
+  motivoNoProgramada: str.optional(),
+  audiencia: z
+    .object({
+      tipo: z.enum(["segmento", "lista"]),
+      id,
+      nombre: str,
+      incorporarNuevos: z.boolean(),
+      candidatos: num,
+      elegibles: num,
+      noElegibles: z.record(num),
+    })
+    .optional(),
+  gmail: z.object({ estado: str, detalle: str.optional() }).optional(),
+  trabajador: z
+    .object({ vivo: z.boolean(), ultimoLatido: str.optional() })
+    .optional(),
+  cuota: z
+    .object({
+      nuevosHoy: num,
+      topeGlobal: num,
+      campanaHoy: num,
+      topeCampana: num,
+    })
+    .optional(),
+  inscripciones: z.record(num).optional(),
+  mensajes: z.record(num).optional(),
+  porPaso: z
+    .array(
+      z.object({
+        paso: num,
+        programados: num,
+        entregando: num,
+        aceptados: num,
+        fallidos: num,
+        cancelados: num,
+      }),
+    )
+    .optional(),
+  proximoEnvio: str.optional(),
+  diagnostico: z.array(
+    z.object({
+      nivel: z.enum(["info", "aviso", "error"]),
+      texto: str,
+      accion: str,
+    }),
+  ),
+  destinatarios: z.array(
+    z.object({
+      inscripcionId: id,
+      contactoId: id,
+      nombre: str,
+      correo: str.optional(),
+      estado: estadoDestinatarioSchema,
+      texto: str,
+      pasoActual: num,
+      proximoEnvio: str.optional(),
+      enviadoEn: str.optional(),
+      mensajeId: str.optional(),
+      error: str.optional(),
+    }),
+  ),
+});
+
+// ------------------------------------------------------------------ listas
+
+export const listaSchema = z.object({
+  id,
+  nombre: str,
+  tipo: z.enum(["estatica", "vinculada"]),
+  segmentoId: str.optional(),
+  descripcion: str.optional(),
+  archivada: z.boolean(),
+  miembros: num,
+  elegibles: num,
+  retirados: num,
+  creadoEn: str,
+  campanas: z
+    .array(z.object({ id, nombre: str, estado: str, secuenciaId: id }))
+    .optional(),
+});
+export const miembrosListaSchema = z.object({
+  total: num,
+  miembros: z.array(
+    z.object({
+      id,
+      nombre: str,
+      correo: str.optional(),
+      cargo: str.optional(),
+      empresa: str,
+      elegible: z.boolean(),
+      motivo: str.optional(),
+    }),
+  ),
+  retirados: z.array(
+    z.object({
+      id,
+      nombre: str,
+      retiradoEn: str,
+      motivoRetiro: str,
+    }),
+  ),
+});
+
+// ------------------------------------------------------------------ plantillas
+
+export const plantillaSchema = z.object({
+  id,
+  nombre: str,
+  asunto: str,
+  cuerpo: str,
+  formato: z.enum(["texto", "html"]),
+  cuerpoHtml: str.optional(),
+  version: num,
+  archivada: z.boolean(),
+  variables: z.array(str),
+  sinBaja: z.boolean(),
+  actualizadoEn: str,
+});
+export const vistaPlantillaSchema = z.object({
+  asunto: str,
+  texto: str,
+  html: str.optional(),
+  respaldo: z.array(str),
+  pieAgregado: z.boolean(),
+  variables: z.array(str),
+  admitidas: z.array(str),
+});
+export const plantillaParaPasoSchema = z.object({
+  plantillaId: id,
+  plantillaVersion: num,
+  asunto: str,
+  cuerpo: str,
+  formato: z.enum(["texto", "html"]),
+  cuerpoHtml: str.optional(),
+});
+
+// ------------------------------------------------------------------ importación
+
+export const campoImportacionSchema = z.enum([
+  "nombre",
+  "correo",
+  "cargo",
+  "telefono",
+  "empresa",
+  "nit",
+  "municipio",
+  "sector",
+  "sitioWeb",
+]);
+export const analisisImportacionSchema = z.object({
+  columnas: z.array(str),
+  filas: z.array(z.object({ fila: num, valores: z.array(str) })),
+  totalFilas: num,
+  filasVacias: num,
+  mapeoSugerido: z.record(num),
+  hojas: z.array(str),
+  hoja: str.optional(),
+  limites: z.object({ bytes: num, filas: num, lote: num }),
+});
+export const previaImportacionSchema = z.object({
+  resumen: z.object({
+    crear: num,
+    actualizar: num,
+    omitir: num,
+    error: num,
+  }),
+  filas: z.array(
+    z.object({
+      fila: num,
+      accion: z.enum(["crear", "actualizar", "omitir", "error"]),
+      motivo: str,
+      nombre: str,
+      correo: str,
+      empresa: str,
+    }),
+  ),
+});
+export const resultadoImportacionSchema = z.object({
+  ok: z.literal(true),
+  creados: num,
+  actualizados: num,
+  omitidos: num,
+  fallidos: num,
+  filas: z.array(
+    z.object({
+      fila: num,
+      resultado: z.enum(["creado", "actualizado", "omitir", "error"]),
+      motivo: str,
+    }),
+  ),
+});
+export const coincidenciaEmpresaSchema = z.object({
+  id,
+  razonSocial: str,
+  municipio: str.optional(),
+  motivo: str,
+  exacta: z.boolean(),
+});
+export const contactoCreadoSchema = z.object({
+  ok: z.literal(true),
+  id,
+  empresaId: id,
+  empresaCreada: z.boolean(),
+});
+export const resumenBajasSchema = z.object({
+  configurada: z.boolean(),
+  pendientes: num,
+  sincronizadas: num,
+  ultimaSincronizacion: str.optional(),
+  ultimoError: str.optional(),
+  proximoIntento: str.optional(),
 });

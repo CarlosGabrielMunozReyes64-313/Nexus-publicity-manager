@@ -11,7 +11,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { FeedbackProvider } from "../components/ui";
 import { db, reset, route } from "../mocks/handlers";
-import ImportCSV from "./contactos/ImportCSV";
+import Importar from "./contactos/Importar";
 import Auditoria from "./auditoria/Page";
 import Segmentos from "./segmentos/Page";
 import { agruparPorDia, indicadoresDeCosto } from "./informes/Page";
@@ -36,24 +36,17 @@ function montar(children: ReactNode, path = "/") {
 }
 function archivo(nombre: string, texto: string, size?: number) {
   const file = new File([texto], nombre, { type: "text/csv" });
-  Object.defineProperty(file, "text", { value: async () => texto });
   if (size) Object.defineProperty(file, "size", { value: size });
   return file;
 }
 async function cargar(file: File) {
-  fireEvent.change(screen.getByLabelText(/Archivo CSV/), {
+  fireEvent.change(screen.getByLabelText(/Archivo \(\.csv o \.xlsx/), {
     target: { files: [file] },
   });
 }
-function elegir(empresa: string, origen = "manual", base = "pendiente") {
+function elegir(empresa: string) {
   fireEvent.change(screen.getByLabelText("Empresa de estos contactos"), {
     target: { value: empresa },
-  });
-  fireEvent.change(screen.getByLabelText("Origen obligatorio"), {
-    target: { value: origen },
-  });
-  fireEvent.change(screen.getByLabelText("Base legal obligatoria"), {
-    target: { value: base },
   });
 }
 beforeEach(() => {
@@ -68,15 +61,9 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllGlobals());
-describe("Importación CSV (01, 02, 22)", () => {
+describe("Importación CSV o Excel (01, 02, 22)", () => {
   it("cambiar la empresa tras previsualizar invalida la vista previa", async () => {
-    montar(
-      <ImportCSV
-        contactos={db.contactos}
-        empresas={db.empresas}
-        onClose={() => {}}
-      />,
-    );
+    montar(<Importar empresas={db.empresas} onClose={() => {}} />);
     await cargar(archivo("a.csv", "nombre,correo\nAna,ana@nuevo.example"));
     await screen.findByText("Previsualizar importación");
     elegir("e1");
@@ -84,9 +71,7 @@ describe("Importación CSV (01, 02, 22)", () => {
       screen.getByRole("button", { name: "Previsualizar importación" }),
     );
     await screen.findByRole("button", { name: "Importar filas válidas" });
-    fireEvent.change(screen.getByLabelText("Empresa de estos contactos"), {
-      target: { value: "e2" },
-    });
+    elegir("e2");
     await waitFor(() =>
       expect(
         screen.queryByRole("button", { name: "Importar filas válidas" }),
@@ -112,13 +97,7 @@ describe("Importación CSV (01, 02, 22)", () => {
     expect(db.contactos.at(-1)?.empresaId).toBe("e2");
   });
   it("un archivo posterior inválido limpia filas, selección y vista previa", async () => {
-    montar(
-      <ImportCSV
-        contactos={db.contactos}
-        empresas={db.empresas}
-        onClose={() => {}}
-      />,
-    );
+    montar(<Importar empresas={db.empresas} onClose={() => {}} />);
     await cargar(archivo("bueno.csv", "nombre,correo\nAna,ana@nuevo.example"));
     await screen.findByText("Previsualizar importación");
     elegir("e1");
@@ -126,7 +105,7 @@ describe("Importación CSV (01, 02, 22)", () => {
       screen.getByRole("button", { name: "Previsualizar importación" }),
     );
     await screen.findByRole("button", { name: "Importar filas válidas" });
-    await cargar(archivo("grande.csv", "nombre,correo\nX,x@x.example", 3e6));
+    await cargar(archivo("grande.csv", "nombre,correo\nX,x@x.example", 5e6));
     expect(await screen.findByRole("alert")).toHaveTextContent("grande.csv");
     expect(
       screen.queryByRole("button", { name: "Importar filas válidas" }),
@@ -134,36 +113,32 @@ describe("Importación CSV (01, 02, 22)", () => {
     expect(
       screen.queryByRole("button", { name: "Previsualizar importación" }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText("Ana")).not.toBeInTheDocument();
     await cargar(archivo("roto.csv", 'nombre,correo\n"Ana,ana@x.example'));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "comillas sin cerrar",
     );
-    expect(screen.queryByText("bueno.csv")).not.toBeInTheDocument();
+    expect(screen.queryByText(/bueno\.csv/)).not.toBeInTheDocument();
   });
-  it("detecta duplicados en una pasada y resume creadas, omitidas y rechazadas", async () => {
+  it("detecta duplicados, dice el motivo por fila y resume el resultado", async () => {
     const existente = db.contactos[0].correo!;
-    montar(
-      <ImportCSV
-        contactos={db.contactos}
-        empresas={db.empresas}
-        onClose={() => {}}
-      />,
-    );
+    montar(<Importar empresas={db.empresas} onClose={() => {}} />);
     await cargar(
       archivo(
         "mixto.csv",
-        `correo,nombre\n${existente},Ya existe\nnueva@x.example,Nueva\nNUEVA@x.example,Repetida\nsin-arroba,Inválida`,
+        `correo,nombre\n${existente},Ya existe\n  NUEVA@x.example ,Nueva\nnueva@x.example,Repetida\nsin-arroba,Inválida\n,`,
       ),
     );
-    await screen.findByText("Previsualizar importación");
+    expect(await screen.findByText(/4 filas con datos/)).toBeInTheDocument();
     elegir("e1");
     fireEvent.click(
       screen.getByRole("button", { name: "Previsualizar importación" }),
     );
     expect(
-      await screen.findByText(/1 listas · 2 duplicadas · 1 inválidas/),
+      await screen.findByText(
+        /1 por crear · 0 por actualizar · 2 omitidas · 1 con error/,
+      ),
     ).toBeInTheDocument();
+    expect(screen.getByText(/ya está en la fila 3/)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Importar filas válidas" }),
     );
@@ -173,11 +148,44 @@ describe("Importación CSV (01, 02, 22)", () => {
       ).getByRole("button", { name: "Confirmar" }),
     );
     const resumen = await screen.findByText(/Importación terminada/, {
-      selector: "p",
+      selector: "strong",
     });
-    expect(resumen).toHaveTextContent("1 filas creadas");
+    expect(resumen).toHaveTextContent("1 creadas");
     expect(resumen).toHaveTextContent("2 omitidas");
-    expect(resumen).toHaveTextContent("1 rechazadas");
+    expect(resumen).toHaveTextContent("1 con error");
+    expect(db.contactos.at(-1)?.correo).toBe("nueva@x.example");
+  });
+  it("con «actualizar», un correo existente se actualiza en lugar de omitirse", async () => {
+    const c = db.contactos[0];
+    montar(<Importar empresas={db.empresas} onClose={() => {}} />);
+    await cargar(
+      archivo(
+        "act.csv",
+        `nombre,correo,cargo\nNombre Nuevo,${c.correo!.toUpperCase()},Gerente`,
+      ),
+    );
+    await screen.findByText("Previsualizar importación");
+    elegir("e1");
+    fireEvent.change(screen.getByLabelText("Si el correo ya existe"), {
+      target: { value: "actualizar" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Previsualizar importación" }),
+    );
+    expect(
+      await screen.findByText(/0 por crear · 1 por actualizar/),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Importar filas válidas" }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "Confirmar importación" }),
+      ).getByRole("button", { name: "Confirmar" }),
+    );
+    await screen.findByText(/Importación terminada/, { selector: "strong" });
+    expect(db.contactos[0].nombre).toBe("Nombre Nuevo");
+    expect(db.contactos[0].cargo).toBe("Gerente");
   });
 });
 describe("Fechas (10)", () => {
@@ -270,9 +278,13 @@ describe("Segmentos (extra)", () => {
       expect(screen.getByRole("button", { name: "Aprobar" })).toBeEnabled(),
     );
     expect(screen.queryByText(/Hay cambios sin guardar/)).toBeNull();
-    expect(db.segmentos.find((x) => x.id === "seg2")!.reglas[0].valor).toBe(
-      "Candelaria",
-    );
+    expect(
+      (
+        db.segmentos.find((x) => x.id === "seg2")!.reglas[0] as {
+          valor: string;
+        }
+      ).valor,
+    ).toBe("Candelaria");
   });
 });
 describe("Pedidos de propuestas a los agentes (extra)", () => {

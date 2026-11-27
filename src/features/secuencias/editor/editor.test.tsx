@@ -332,7 +332,7 @@ describe("Editor de secuencias", () => {
     expect(de("POST", "/secuencias/s2/versiones/1/restaurar")).toHaveLength(1);
   });
 
-  it("el diálogo de aprobar resume la secuencia y deja claro que no envía nada", async () => {
+  it("el diálogo de aprobar resume la secuencia y permite aprobar sin programar", async () => {
     await listo();
     fireEvent.click(boton("Aprobar"));
     const dialogo = await screen.findByRole("dialog", {
@@ -340,19 +340,27 @@ describe("Editor de secuencias", () => {
     });
     expect(within(dialogo).getByText("3 correos")).toBeInTheDocument();
     expect(
-      within(dialogo).getByText(/contactos elegibles/),
+      within(dialogo).getByText(/^\d+ destinatarios? elegibles?/),
     ).toBeInTheDocument();
-    expect(dialogo.textContent).toContain(
-      "Aprobar no envía ningún correo. Los envíos empiezan cuando actives la campaña",
+    const programar = within(dialogo).getByLabelText(
+      "Programar los envíos al aprobar",
     );
-    expect(
-      within(dialogo).queryByRole("button", { name: "Aprobar y reanudar" }),
-    ).toBeNull();
+    expect(programar).toBeChecked();
+    expect(dialogo.textContent).toContain(
+      "Al aprobar se programa el primer correo para cada destinatario elegible",
+    );
+    fireEvent.click(programar);
+    expect(dialogo.textContent).toContain(
+      "Aprobar sin programar no envía ningún correo",
+    );
     const antes = [db.interacciones.length, db.pruebas.length];
     fireEvent.click(within(dialogo).getByRole("button", { name: "Aprobar" }));
     await waitFor(() =>
       expect(de("POST", "/secuencias/s2/aprobar")).toHaveLength(1),
     );
+    expect(de("POST", "/secuencias/s2/aprobar")[0].cuerpo).toEqual({
+      programar: false,
+    });
     expect(
       await screen.findByText("Borrador v2 · aprobada v2"),
     ).toBeInTheDocument();
@@ -360,7 +368,7 @@ describe("Editor de secuencias", () => {
     expect([db.interacciones.length, db.pruebas.length]).toEqual(antes);
   });
 
-  it("en una campaña activa el diálogo ofrece «Aprobar y reanudar»", async () => {
+  it("en una campaña activa aprobar los cambios los programa en un solo paso", async () => {
     await listo("s1");
     fireEvent.change(asunto(), {
       target: { value: "Nuevo asunto para {{empresa}}" },
@@ -373,14 +381,19 @@ describe("Editor de secuencias", () => {
       name: "Aprobar cambios",
     });
     expect(
-      within(dialogo).getByText(/se pausan sus envíos/),
+      within(dialogo).getByText(/aplica la versión nueva/),
     ).toBeInTheDocument();
     fireEvent.click(
-      within(dialogo).getByRole("button", { name: "Aprobar y reanudar" }),
+      within(dialogo).getByRole("button", {
+        name: "Aprobar cambios y programar",
+      }),
     );
     await waitFor(() =>
-      expect(de("POST", "/secuencias/s1/aprobar-y-reanudar")).toHaveLength(1),
+      expect(de("POST", "/secuencias/s1/aprobar")).toHaveLength(1),
     );
+    expect(de("POST", "/secuencias/s1/aprobar")[0].cuerpo).toEqual({
+      programar: true,
+    });
     await waitFor(() =>
       expect(db.campanas.find((c) => c.id === "cam1")?.estado).toBe("activa"),
     );

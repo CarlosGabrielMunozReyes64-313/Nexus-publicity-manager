@@ -1,5 +1,7 @@
 # Validación de entrega — 22 de noviembre de 2026
 
+**Actualización del 27 de noviembre de 2026:** Vitest 126 aprobadas (16 archivos; nuevas: `src/features/nuevas.test.tsx` y las de importación CSV/XLSX, aprobar y programar). `tsc --noEmit`, ESLint, Prettier y `vite build` sin errores. 95 respuestas reales del backend validadas con los esquemas Zod (`scripts/validar_contrato.ts` con `contratos.json` y `contratos_envios.json`). Recorrido en Chrome con la API real: listas, plantillas, nuevo contacto con empresa, segmento Y/O, pestaña Envíos y configuración, sin errores de consola. Ver ENTREGA.md del backend.
+
 Entorno de comprobación: Node 22.23.5, npm 10.9.9, Chrome for Testing 153 con Playwright. Versiones exactas de dependencias en package-lock.json.
 
 ## Comprobaciones ejecutadas
