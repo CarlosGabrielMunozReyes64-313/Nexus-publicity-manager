@@ -18,6 +18,7 @@ import {
   Table,
 } from "../../components/ui";
 import { Intro, Select, useCommand } from "../shared";
+import { BotonEliminar } from "../eliminar/Eliminar";
 
 /** Guarda un Blob como archivo (exportaciones a Excel). */
 export function guardarArchivo(blob: Blob, nombre: string) {
@@ -228,6 +229,7 @@ function Detalle({
   lista: import("zod").infer<typeof S.listaSchema>;
 }) {
   const cmd = useCommand();
+  const irA = useNavigate();
   const miembros = useResource(
     `/listas/${lista.id}/miembros?limite=500`,
     S.miembrosListaSchema,
@@ -344,7 +346,16 @@ function Detalle({
                 Archivar
               </Button>
             )}
+            <BotonEliminar
+              recurso="listas"
+              ids={[lista.id]}
+              etiqueta="Eliminar lista"
+              onDone={() => irA("/listas")}
+            />
           </div>
+          <p className="muted">
+            Eliminar la lista no borra a sus contactos: siguen en la aplicación.
+          </p>
         </Card>
         {estatica && !lista.archivada && (
           <Card title="Añadir contactos">
@@ -426,21 +437,29 @@ function Detalle({
               {
                 id: "quitar",
                 header: "",
-                cell: ({ row }) =>
-                  estatica && !lista.archivada ? (
-                    <Button
-                      onClick={() =>
-                        cmd.ask(
-                          "Quitar de la lista",
-                          `${row.original.nombre} saldrá de la lista. No se borra el contacto.`,
-                          `/listas/${lista.id}/quitar`,
-                          { contactoIds: [row.original.id] },
-                        )
-                      }
-                    >
-                      Quitar
-                    </Button>
-                  ) : null,
+                cell: ({ row }) => (
+                  <div className="row">
+                    {estatica && !lista.archivada && (
+                      <Button
+                        onClick={() =>
+                          cmd.ask(
+                            "Quitar de esta lista",
+                            `${row.original.nombre} saldrá solo de «${lista.nombre}». El contacto sigue en la aplicación y en sus otras listas.`,
+                            `/listas/${lista.id}/quitar`,
+                            { contactoIds: [row.original.id] },
+                          )
+                        }
+                      >
+                        Quitar de esta lista
+                      </Button>
+                    )}
+                    <BotonEliminar
+                      recurso="contactos"
+                      ids={[row.original.id]}
+                      compacto
+                    />
+                  </div>
+                ),
               },
             ]}
           />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { z } from "zod";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { request } from "../../api/client";
 import { useResource } from "../../api/hooks";
@@ -11,6 +11,7 @@ import { describirReglas } from "./describir";
 import { Button, Card, Badge, QueryState, Table } from "../../components/ui";
 import { Intro, useCommand } from "../shared";
 import { EditorReglas, useVistaPrevia } from "./Reglas";
+import { BotonEliminar } from "../eliminar/Eliminar";
 export default function Page() {
   const q = useResource("/segmentos", S.segmentoSchema.array());
   const id = useLocation().pathname.split("/")[2];
@@ -96,6 +97,7 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
   };
   const listas = useResource("/listas", S.listaSchema.array());
   const cmd = useCommand();
+  const irA = useNavigate();
   const previa = useVistaPrevia(reglas);
   const conteo = previa.conteo ?? 0;
   const sinGuardar = !!item && sucio;
@@ -197,6 +199,11 @@ function Editor({ item, close }: { item?: Segmento; close: () => void }) {
               >
                 Archivar
               </Button>
+              <BotonEliminar
+                recurso="segmentos"
+                ids={[item.id]}
+                onDone={() => irA("/segmentos")}
+              />
               {item.estado === "aprobado" && (
                 <Button
                   variant="primary"

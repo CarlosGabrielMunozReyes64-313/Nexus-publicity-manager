@@ -728,7 +728,17 @@ function crear(
   return seqId;
 }
 
-export function nueva(db: Datos, body: unknown) {
+export function nueva(
+  db: Datos,
+  body: unknown,
+  plantilla?: {
+    plantillaId: string;
+    asunto: string;
+    cuerpo: string;
+    formato: "texto" | "html";
+    cuerpoHtml?: string;
+  },
+) {
   const b = (body ?? {}) as Record<string, unknown>;
   const limpio = (k: string) =>
     String(b[k] ?? "")
@@ -745,6 +755,10 @@ export function nueva(db: Datos, body: unknown) {
   if (llamada.length < 3 || llamada.length > 200)
     throw new ErrorDemo(
       "La llamada a la acción requiere entre 3 y 200 caracteres",
+    );
+  if (b.listaId && !b.segmentoId)
+    throw new ErrorDemo(
+      "En la demostración, elija un segmento: las secuencias por lista se prueban con la API real",
     );
   const seg = db.segmentos.find((s) => s.id === b.segmentoId);
   if (!seg) throw new ErrorDemo("Elija un segmento");
@@ -778,6 +792,15 @@ export function nueva(db: Datos, body: unknown) {
             },
           ],
           formato: "texto",
+          ...(plantilla
+            ? {
+                asunto: plantilla.asunto || "Una pregunta para {{empresa}}",
+                cuerpo: plantilla.cuerpo,
+                formato: plantilla.formato,
+                cuerpoHtml: plantilla.cuerpoHtml,
+                plantillaId: plantilla.plantillaId,
+              }
+            : {}),
         },
       ],
     },

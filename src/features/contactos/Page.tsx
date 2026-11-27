@@ -19,6 +19,7 @@ import { fechaHora } from "../../lib/formato";
 import Importar from "./Importar";
 import NuevoContacto from "./NuevoContacto";
 import { exportar } from "../listas/Page";
+import { BotonEliminar } from "../eliminar/Eliminar";
 export default function Page() {
   const navigate = useNavigate();
   const q = useResource("/contactos", S.contactoSchema.array());
@@ -175,6 +176,12 @@ export default function Page() {
                   Añadir a segmento
                 </Button>
                 <AnadirALista ids={selected} onListo={() => setSelected([])} />
+                <BotonEliminar
+                  recurso="contactos"
+                  ids={selected}
+                  etiqueta="Eliminar de la aplicación"
+                  onDone={() => setSelected([])}
+                />
               </div>
             )}
             <Table
@@ -371,6 +378,7 @@ function ContactDetail({
   empresas: Empresa[];
 }) {
   const cmd = useCommand();
+  const irA = useNavigate();
   const [legal, setLegal] = useState<BaseLegal | null>(null);
   // El listado es liviano: la ficha pide al servidor las evidencias completas.
   const detalle = useResource(`/contactos/${resumen.id}`, S.contactoSchema);
@@ -431,7 +439,17 @@ function ContactDetail({
               }}
             >
               Excluir contacto
-            </Button>
+            </Button>{" "}
+            <BotonEliminar
+              recurso="contactos"
+              ids={[c.id]}
+              onDone={() => irA("/contactos")}
+            />
+            <p className="muted">
+              «Excluir» lo deja en la aplicación sin recibir correos. «Eliminar
+              contacto de la aplicación» borra sus datos personales y cancela
+              sus envíos pendientes; si tenía una baja, se conserva.
+            </p>
             {c.excluido && <p>{c.motivoExclusion}</p>}
           </Card>
           <Card title="Base legal">

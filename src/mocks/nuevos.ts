@@ -139,6 +139,142 @@ function render(texto: string) {
   );
 }
 
+/** Copia de una plantilla para el primer paso (igual que /plantillas/{id}/para-paso). */
+export function plantillaParaPaso(id: unknown) {
+  const p = plantillas.find((x) => x.id === id && !x.archivada);
+  if (!p) return undefined;
+  let cuerpo = p.cuerpo;
+  if (!cuerpo.includes("{{firma}}")) cuerpo += "\n\n{{firma}}";
+  if (!cuerpo.includes("{{baja}}")) cuerpo += "\n\n{{baja}}";
+  return {
+    plantillaId: p.id,
+    asunto: p.asunto,
+    cuerpo,
+    formato: p.formato,
+    cuerpoHtml: p.cuerpoHtml,
+  };
+}
+
+function impactoEliminacion(db: Db, recurso: string, ids: string[]) {
+  const activas = (pred: (c: T.Campana) => boolean) =>
+    db.campanas
+      .filter((c) => c.estado === "activa" && pred(c))
+      .map((c) => ({
+        id: c.id,
+        nombre: c.nombre,
+        estado: c.estado,
+        secuenciaId: c.secuenciaId,
+      }));
+  const base = {
+    efectos: [] as string[],
+    secuenciasActivas: [] as ReturnType<typeof activas>,
+    bloqueo: null as string | null,
+  };
+  if (recurso === "contactos") {
+    const cs = db.contactos.filter((c) => ids.includes(c.id));
+    if (!cs.length)
+      return {
+        ...base,
+        titulo: "Contacto",
+        detalle: null,
+        bloqueo: "Ya estaba eliminado",
+        puedeEliminar: false,
+      };
+    const enListas = listas.filter((l) =>
+      l.miembros.some((m) => ids.includes(m)),
+    ).length;
+    const conBaja = cs.filter((c) =>
+      db.supresiones.some(
+        (x) => x.correo?.toLowerCase() === c.correo?.toLowerCase(),
+      ),
+    ).length;
+    const efectos = [
+      ...(enListas ? [`Sale de ${enListas} lista(s) de envío.`] : []),
+      "Se borran sus datos personales (nombre, correo, teléfono, evidencias). Los totales de campañas y el historial quedan anónimos.",
+      conBaja
+        ? "Su baja registrada se conserva: si se vuelve a importar no recibirá correos."
+        : "No es una baja: si se vuelve a importar, podrá recibir correos de nuevo. Para impedirlo, use «Excluir».",
+    ];
+    return {
+      ...base,
+      titulo: cs
+        .map((c) => `${c.nombre} (${c.correo ?? "sin correo"})`)
+        .join(", "),
+      detalle: cs.length > 1 ? `${cs.length} contactos` : null,
+      efectos,
+      secuenciasActivas: activas((c) =>
+        cs.some((ct) => {
+          const seg = db.segmentos.find((s) => s.id === c.segmentoId);
+          return !!seg && coincide(ct, db.empresas, seg.reglas);
+        }),
+      ),
+      puedeEliminar: true,
+    };
+  }
+  if (recurso === "segmentos") {
+    const seg = db.segmentos.find((x) => x.id === ids[0]);
+    if (!seg) return null;
+    const usan = db.campanas.filter((c) => c.segmentoId === seg.id);
+    const vinculadas = listas.filter((l) => l.segmentoId === seg.id);
+    const bloqueo = usan.length
+      ? `Lo usa la secuencia «${usan[0].nombre}». Cambie su audiencia o archívela antes.`
+      : vinculadas.length
+        ? `Lo usa la lista vinculada «${vinculadas[0].nombre}».`
+        : null;
+    return {
+      ...base,
+      titulo: seg.nombre,
+      detalle: null,
+      secuenciasActivas: activas((c) => c.segmentoId === seg.id),
+      efectos: ["No borra contactos: solo la regla."],
+      bloqueo,
+      puedeEliminar: !bloqueo,
+    };
+  }
+  if (recurso === "listas") {
+    const l = listas.find((x) => x.id === ids[0]);
+    if (!l) return null;
+    return {
+      ...base,
+      titulo: l.nombre,
+      detalle: `${l.miembros.length} miembro(s)`,
+      efectos: ["Los contactos siguen en la aplicación."],
+      puedeEliminar: true,
+    };
+  }
+  if (recurso === "plantillas") {
+    const p = plantillas.find((x) => x.id === ids[0]);
+    if (!p) return null;
+    const bloqueo = p.predeterminada
+      ? "Es una plantilla de la galería de NEXUS: no se elimina."
+      : null;
+    return {
+      ...base,
+      titulo: p.nombre,
+      detalle: null,
+      efectos: ["Los pasos que ya la usaron conservan su copia."],
+      bloqueo,
+      puedeEliminar: !bloqueo,
+    };
+  }
+  if (recurso === "empresas") {
+    const e = db.empresas.find((x) => x.id === ids[0]);
+    if (!e) return null;
+    const n = db.contactos.filter((c) => c.empresaId === e.id).length;
+    const bloqueo = n
+      ? `Tiene ${n} contacto(s). Elimínelos o muévalos antes.`
+      : null;
+    return {
+      ...base,
+      titulo: e.razonSocial,
+      detalle: null,
+      bloqueo,
+      puedeEliminar: !bloqueo,
+    };
+  }
+  return null;
+}
+
 export function rutaNuevos(
   db: Db,
   path: string,
@@ -617,6 +753,34 @@ export function rutaNuevos(
         motivo: "Modo demostración: no se programan envíos",
       },
     });
+  // ------------------------------------------------------------ eliminación
+  if (
+    (path === "/eliminacion" || path === "/eliminacion/previa") &&
+    method === "POST"
+  ) {
+    const recurso = String(b.recurso ?? "");
+    const ids = Array.isArray(b.ids) ? b.ids.map(String) : [];
+    if (!ids.length) return fail("Indique qué registro eliminar");
+    const imp = impactoEliminacion(db, recurso, ids);
+    if (!imp) return fail("No se puede eliminar este tipo de registro");
+    if (path === "/eliminacion/previa")
+      return HttpResponse.json({ recurso, ids, ...imp });
+    if (imp.bloqueo) return fail(imp.bloqueo, 409);
+    if (recurso === "contactos") {
+      for (const i of ids) {
+        db.contactos = db.contactos.filter((c) => c.id !== i);
+        for (const l of listas) l.miembros = l.miembros.filter((m) => m !== i);
+      }
+    } else if (recurso === "segmentos")
+      db.segmentos = db.segmentos.filter((x) => x.id !== ids[0]);
+    else if (recurso === "listas")
+      listas = listas.filter((x) => x.id !== ids[0]);
+    else if (recurso === "plantillas")
+      plantillas = plantillas.filter((x) => x.id !== ids[0]);
+    else if (recurso === "empresas")
+      db.empresas = db.empresas.filter((x) => x.id !== ids[0]);
+    return ok({ eliminados: ids.length });
+  }
   if (path === "/imagenes")
     return method === "GET"
       ? HttpResponse.json([])

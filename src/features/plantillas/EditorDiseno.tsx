@@ -4,6 +4,7 @@ import { request } from "../../api/client";
 import { useResource } from "../../api/hooks";
 import * as S from "../../api/schemas";
 import { Button, Modal } from "../../components/ui";
+import { BotonEliminar } from "../eliminar/Eliminar";
 import {
   botonHtml,
   cambiarImagen,
@@ -263,44 +264,58 @@ function ElegirImagen({
               }}
             >
               {q.data.map((im) => (
-                <button
-                  key={im.id}
-                  type="button"
-                  title={im.nombre}
-                  onClick={() =>
-                    onElegir(im.ruta, alt || im.nombre.replace(/\.[^.]+$/, ""))
-                  }
-                  style={{
-                    padding: 0,
-                    border: "1px solid #dde5e0",
-                    borderRadius: 6,
-                    background: "#fff",
-                    cursor: "pointer",
-                  }}
-                >
-                  <img
-                    src={im.ruta}
-                    alt={im.nombre}
+                <div key={im.id} style={{ position: "relative" }}>
+                  <button
+                    type="button"
+                    title={im.nombre}
+                    onClick={() =>
+                      onElegir(
+                        im.ruta,
+                        alt || im.nombre.replace(/\.[^.]+$/, ""),
+                      )
+                    }
                     style={{
-                      width: "100%",
-                      height: 72,
-                      objectFit: "cover",
-                      borderRadius: "6px 6px 0 0",
-                    }}
-                  />
-                  <small
-                    style={{
-                      display: "block",
-                      padding: 4,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      padding: 0,
+                      border: "1px solid #dde5e0",
+                      borderRadius: 6,
+                      background: "#fff",
+                      cursor: "pointer",
                     }}
                   >
-                    {im.ejemplo ? "Ejemplo · " : ""}
-                    {im.nombre}
-                  </small>
-                </button>
+                    <img
+                      src={im.ruta}
+                      alt={im.nombre}
+                      style={{
+                        width: "100%",
+                        height: 72,
+                        objectFit: "cover",
+                        borderRadius: "6px 6px 0 0",
+                      }}
+                    />
+                    <small
+                      style={{
+                        display: "block",
+                        padding: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {im.ejemplo ? "Ejemplo · " : ""}
+                      {im.nombre}
+                    </small>
+                  </button>
+                  {!im.ejemplo && (
+                    <div style={{ position: "absolute", top: 2, right: 2 }}>
+                      <BotonEliminar
+                        recurso="imagenes"
+                        ids={[im.id]}
+                        etiqueta={`Eliminar imagen ${im.nombre}`}
+                        compacto
+                      />
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </>

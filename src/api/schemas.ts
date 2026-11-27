@@ -1056,3 +1056,35 @@ export const resumenBajasSchema = z.object({
   ultimoError: str.optional(),
   proximoIntento: str.optional(),
 });
+
+// ------------------------------------------------------------------ eliminación
+
+export const recursoEliminableSchema = z.enum([
+  "contactos",
+  "segmentos",
+  "listas",
+  "plantillas",
+  "empresas",
+  "imagenes",
+]);
+export const previaEliminacionSchema = z.object({
+  recurso: recursoEliminableSchema,
+  ids: z.array(id),
+  titulo: str,
+  detalle: str.nullish(),
+  efectos: z.array(str),
+  /** Secuencias activas afectadas por la eliminación. */
+  secuenciasActivas: z.array(
+    z
+      .object({
+        id,
+        nombre: str,
+        estado: str.optional(),
+        secuenciaId: str.nullish(),
+        contactos: num.optional(),
+      })
+      .passthrough(),
+  ),
+  bloqueo: str.nullish(),
+  puedeEliminar: z.boolean(),
+});

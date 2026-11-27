@@ -338,11 +338,22 @@ describe("Nueva con IA y Nueva en blanco", () => {
     fireEvent.change(within(dialogo).getByLabelText("Nombre"), {
       target: { value: "Invitación al taller" },
     });
-    const segmento = within(dialogo).getByLabelText("Segmento");
+    const segmento = within(dialogo).getByLabelText("Audiencia");
     await waitFor(() =>
       expect(within(segmento).getAllByRole("option").length).toBeGreaterThan(1),
     );
-    fireEvent.change(segmento, { target: { value: "seg1" } });
+    fireEvent.change(segmento, { target: { value: "seg:seg1" } });
+    // Propone la plantilla predeterminada de primer contacto y muestra su vista previa.
+    const plantilla = within(dialogo).getByLabelText(
+      "Plantilla del primer correo",
+    ) as HTMLSelectElement;
+    await waitFor(() => expect(plantilla.value).not.toBe(""));
+    expect(plantilla.selectedOptions[0].textContent).toMatch(/Primer contacto/);
+    expect(
+      await within(dialogo).findByRole("region", {
+        name: "Vista previa del primer correo",
+      }),
+    ).toHaveTextContent("Asunto:");
     fireEvent.click(
       within(dialogo).getByRole("button", { name: "Crear y abrir el editor" }),
     );
@@ -354,6 +365,9 @@ describe("Nueva con IA y Nueva en blanco", () => {
     const id = screen.getByTestId("ruta").textContent!.split("/")[2];
     const s = db.secuencias.find((x) => x.id === id)!;
     expect(s.nombre).toBe("Invitación al taller");
+    expect((s.pasos[0] as { plantillaId?: string }).plantillaId).toBe(
+      plantilla.value,
+    );
     expect(db.campanas.find((c) => c.secuenciaId === id)?.estado).toBe(
       "borrador",
     );

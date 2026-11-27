@@ -13,7 +13,7 @@ import {
 import * as SQ from "./secuencias";
 import { ErrorDemo, type SolicitudMock } from "./secuencias";
 import { resetAccesos, rutaAccesos } from "./accesos";
-import { resetNuevos, rutaNuevos } from "./nuevos";
+import { plantillaParaPaso, resetNuevos, rutaNuevos } from "./nuevos";
 export let db = crearDatos();
 /** Pedidos a los agentes en el modo demostración (se resuelven al instante). */
 let pedidos: z.infer<typeof S.solicitudAgenteSchema>[] = [];
@@ -266,7 +266,15 @@ function mutarSecuencias(
     return HttpResponse.json(r);
   };
   if (method === "POST" && !id)
-    return ok(SQ.nueva(db, body), "crear_secuencia", "nueva");
+    return ok(
+      SQ.nueva(
+        db,
+        body,
+        plantillaParaPaso((body as { plantillaId?: unknown })?.plantillaId),
+      ),
+      "crear_secuencia",
+      "nueva",
+    );
   if (method === "POST" && id === "ia")
     return ok(SQ.pedirIA(db, solicitudes, body), "pedir_secuencia_ia", "ia");
   if (method === "POST" && id === "solicitudes" && n === "reintentar")

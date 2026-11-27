@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useResource } from "../../api/hooks";
 import * as S from "../../api/schemas";
 import {
@@ -16,12 +16,14 @@ import { Intro, Resource, Select, useCommand } from "../shared";
 import { moneda } from "../../lib/formato";
 import type { Empresa, Duplicado } from "../../types";
 import Sugerencias, { useSugerenciasPendientes } from "./Sugerencias";
+import { BotonEliminar } from "../eliminar/Eliminar";
 export default function Page() {
   const q = useResource("/empresas", S.empresaSchema.array());
   const [tab, setTab] = useState("Empresas");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const cmd = useCommand();
+  const irA = useNavigate();
   const id = useLocation().pathname.split("/")[2];
   const e = q.data?.find((e) => e.id === id);
   const sugeridos = useSugerenciasPendientes();
@@ -55,6 +57,12 @@ export default function Page() {
                   {e.senales.map((s, i) => (
                     <p key={i}>{s.descripcion}</p>
                   ))}
+                  <BotonEliminar
+                    recurso="empresas"
+                    ids={[e.id]}
+                    etiqueta="Eliminar empresa"
+                    onDone={() => irA("/empresas")}
+                  />
                 </Card>
                 <Card
                   title={`Puntaje de afinidad · ${e.puntaje?.total ?? "Sin datos"}/100`}

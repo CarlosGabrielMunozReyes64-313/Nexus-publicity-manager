@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { request } from "../../api/client";
 import { useResource } from "../../api/hooks";
 import * as S from "../../api/schemas";
+import { BotonEliminar } from "../eliminar/Eliminar";
 import {
   Badge,
   Button,
@@ -457,6 +458,12 @@ function EditorPlantilla({ plantilla }: { plantilla?: Plantilla }) {
                     Archivar
                   </Button>
                 )}
+                <BotonEliminar
+                  recurso="plantillas"
+                  ids={[plantilla.id]}
+                  etiqueta="Eliminar plantilla"
+                  onDone={() => navigate("/plantillas")}
+                />
               </>
             )}
           </div>
