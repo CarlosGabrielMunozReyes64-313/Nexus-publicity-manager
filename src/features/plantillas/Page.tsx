@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import type { z } from "zod";
 import { request } from "../../api/client";
@@ -69,6 +70,8 @@ export default function Page() {
         {id ? (
           id === "nueva" || item ? (
             <EditorPlantilla key={id} plantilla={item} />
+          ) : q.isFetching ? (
+            <Card>Cargando plantilla…</Card>
           ) : (
             <Card>
               Plantilla no encontrada (puede estar archivada).{" "}
@@ -216,6 +219,7 @@ function TarjetaPlantilla({ plantilla }: { plantilla: Plantilla }) {
 
 function EditorPlantilla({ plantilla }: { plantilla?: Plantilla }) {
   const navigate = useNavigate();
+  const cache = useQueryClient();
   const cmd = useCommand();
   const { notify } = useFeedback();
   const [nombre, setNombre] = useState(plantilla?.nombre ?? "");
@@ -289,6 +293,8 @@ function EditorPlantilla({ plantilla }: { plantilla?: Plantilla }) {
       "POST",
       {},
     );
+    // Recarga la lista antes de abrir la copia: si no, la ficha no la encuentra.
+    await cache.invalidateQueries();
     notify("Se creó su versión editable.");
     navigate(`/plantillas/${r.id}`);
   };
@@ -312,6 +318,7 @@ function EditorPlantilla({ plantilla }: { plantilla?: Plantilla }) {
                   "POST",
                   datos,
                 );
+                await cache.invalidateQueries();
                 cmd.notify("Plantilla creada.");
                 navigate(`/plantillas/${r.id}`);
               }

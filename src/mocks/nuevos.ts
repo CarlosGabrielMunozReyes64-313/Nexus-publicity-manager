@@ -464,8 +464,11 @@ export function rutaNuevos(
         const n = {
           ...p,
           id: uid(),
-          nombre: `Copia de ${p.nombre}`,
+          nombre: `${p.nombre} (mi versión)`,
           version: 1,
+          predeterminada: false,
+          archivada: false,
+          actualizadoEn: iso(),
         };
         plantillas.push(n);
         return ok({ id: n.id });

@@ -305,5 +305,9 @@ describe("Plantillas con diseño", () => {
         llamadas.some((l) => l.ruta === "/plantillas/pl-demo/duplicar"),
       ).toBe(true),
     );
+    // Abre la copia editable (antes mostraba «Plantilla no encontrada»).
+    expect(await screen.findByDisplayValue(/mi versión/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Nombre")).toBeEnabled();
+    expect(screen.queryByText(/no encontrada/)).not.toBeInTheDocument();
   });
 });
